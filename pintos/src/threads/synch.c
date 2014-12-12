@@ -122,6 +122,11 @@ sema_up (struct semaphore *sema)
 
 static void sema_test_helper (void *sema_);
 
+void printSema( const char* prompt, struct semaphore *sema ) {
+  //printf( "%s, value:%u, waiters:%d", prompt, sema->value, sema->waiter );
+  printf( "%s, value: %u", sema->value );
+}
+
 /* Self-test for semaphores that makes control "ping-pong"
    between a pair of threads.  Insert calls to printf() to see
    what's going on. */
@@ -137,8 +142,13 @@ sema_self_test (void)
   thread_create ("sema-test", PRI_DEFAULT, sema_test_helper, &sema);
   for (i = 0; i < 10; i++) 
     {
+      printSema( "before sema_up to sema[0]", &sema[0] );   
       sema_up (&sema[0]);
+      printSema( "after sema_up to sema[0]", &sema[0] );
+      
+      printSema( "before sema_down to sema[1]", &sema[1] );
       sema_down (&sema[1]);
+      printSema( "after sema_down to sema[1]", &sema[1] );
     }
   printf ("done.\n");
 }
@@ -156,7 +166,7 @@ sema_test_helper (void *sema_)
       sema_up (&sema[1]);
     }
 }
-
+
 /* Initializes LOCK.  A lock can be held by at most a single
    thread at any given time.  Our locks are not "recursive", that
    is, it is an error for the thread currently holding a lock to
@@ -245,7 +255,7 @@ lock_held_by_current_thread (const struct lock *lock)
 
   return lock->holder == thread_current ();
 }
-
+
 /* One semaphore in a list. */
 struct semaphore_elem 
   {
@@ -296,10 +306,32 @@ cond_wait (struct condition *cond, struct lock *lock)
   
   sema_init (&waiter.semaphore, 0);
   list_push_back (&cond->waiters, &waiter.elem);
-  lock_release (lock);
+  lock_release (lock);//why should it release a lock?
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
 }
+
+
+//  A simple example to illustrate this function:
+//Global definition:
+//  struct lock myLock;
+//  struct condition anCondition;
+//  
+//  ... in some local function:
+//  {
+//    lock_acquire( &myLock );
+//    while ( anCondition is not apply in logic )
+//      con_wait(&anCondition, &lock);
+     /*
+      =>waiter = an list_elem with sema(value = 0)
+      =>push list_elem into anCondition's waiter list
+      =>release lock
+      =>push current_thread to waiter.sema's waiter list if anCondition is not signal
+      =>acquire lock
+     */
+//
+//  }
+
 
 /* If any threads are waiting on COND (protected by LOCK), then
    this function signals one of them to wake up from its wait.
