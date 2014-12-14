@@ -27,7 +27,7 @@
    Exception- or Interrupt-Handler Procedure". */
 static uint64_t idt[INTR_CNT];
 
-/* Interrupt handler functions for each interrupt. */
+/* Interrupt handler funcions for each interrupt. */
 static intr_handler_func *intr_handlers[INTR_CNT];
 
 /* Names for each interrupt, for debugging purposes. */
@@ -62,7 +62,7 @@ static void unexpected_interrupt (const struct intr_frame *);
 
 /* Returns the current interrupt status. */
 enum intr_level
-intr_get_level (void) 
+intr_get_level (void)
 {
   uint32_t flags;
 
@@ -71,6 +71,7 @@ intr_get_level (void)
      and "POP" and [IA32-v3a] 5.8.1 "Masking Maskable Hardware
      Interrupts". */
   asm volatile ("pushfl; popl %0" : "=g" (flags));
+  //just add get the flag register value
 
   return flags & FLAG_IF ? INTR_ON : INTR_OFF;
 }
@@ -78,14 +79,14 @@ intr_get_level (void)
 /* Enables or disables interrupts as specified by LEVEL and
    returns the previous interrupt status. */
 enum intr_level
-intr_set_level (enum intr_level level) 
+intr_set_level (enum intr_level level)
 {
   return level == INTR_ON ? intr_enable () : intr_disable ();
 }
 
 /* Enables interrupts and returns the previous interrupt status. */
 enum intr_level
-intr_enable (void) 
+intr_enable (void)
 {
   enum intr_level old_level = intr_get_level ();
   ASSERT (!intr_context ());
@@ -101,7 +102,7 @@ intr_enable (void)
 
 /* Disables interrupts and returns the previous interrupt status. */
 enum intr_level
-intr_disable (void) 
+intr_disable (void)
 {
   enum intr_level old_level = intr_get_level ();
 
@@ -166,6 +167,7 @@ register_handler (uint8_t vec_no, int dpl, enum intr_level level,
                   intr_handler_func *handler, const char *name)
 {
   ASSERT (intr_handlers[vec_no] == NULL);
+
   if (level == INTR_ON)
     idt[vec_no] = make_trap_gate (intr_stubs[vec_no], dpl);
   else
@@ -179,10 +181,11 @@ register_handler (uint8_t vec_no, int dpl, enum intr_level level,
    execute with interrupts disabled. */
 void
 intr_register_ext (uint8_t vec_no, intr_handler_func *handler,
-                   const char *name) 
+                   const char *name)
 {
-  ASSERT (vec_no >= 0x20 && vec_no <= 0x2f);
-  register_handler (vec_no, 0, INTR_OFF, handler, name);
+    ASSERT (vec_no >= 0x20 && vec_no <= 0x2f);//one can register only 16 intr
+                                              //handler at all
+    register_handler (vec_no, 0, INTR_OFF, handler, name);
 }
 
 /* Registers internal interrupt VEC_NO to invoke HANDLER, which
@@ -209,7 +212,7 @@ intr_register_int (uint8_t vec_no, int dpl, enum intr_level level,
 /* Returns true during processing of an external interrupt
    and false at all other times. */
 bool
-intr_context (void) 
+intr_context (void)
 {
   return in_external_intr;
 }
@@ -219,7 +222,7 @@ intr_context (void)
    returning from the interrupt.  May not be called at any other
    time. */
 void
-intr_yield_on_return (void) 
+intr_yield_on_return (void)
 {
   ASSERT (intr_context ());
   yield_on_return = true;
@@ -240,7 +243,6 @@ pic_init (void)
   /* Mask all interrupts on both PICs. */
   outb (PIC0_DATA, 0xff);
   outb (PIC1_DATA, 0xff);
-
   /* Initialize master. */
   outb (PIC0_CTRL, 0x11); /* ICW1: single mode, edge triggered, expect ICW4. */
   outb (PIC0_DATA, 0x20); /* ICW2: line IR0...7 -> irq 0x20...0x27. */
@@ -262,7 +264,7 @@ pic_init (void)
    If we don't acknowledge the IRQ, it will never be delivered to
    us again, so this is important.  */
 static void
-pic_end_of_interrupt (int irq) 
+pic_end_of_interrupt (int irq)
 {
   ASSERT (irq >= 0x20 && irq < 0x30);
 
@@ -342,7 +344,7 @@ make_idtr_operand (uint16_t limit, void *base)
    intr-stubs.S.  FRAME describes the interrupt and the
    interrupted thread's registers. */
 void
-intr_handler (struct intr_frame *frame) 
+intr_handler (struct intr_frame *frame)
 {
   bool external;
   intr_handler_func *handler;
@@ -352,7 +354,7 @@ intr_handler (struct intr_frame *frame)
      and they need to be acknowledged on the PIC (see below).
      An external interrupt handler cannot sleep. */
   external = frame->vec_no >= 0x20 && frame->vec_no < 0x30;
-  if (external) 
+  if (external)
     {
       ASSERT (intr_get_level () == INTR_OFF);
       ASSERT (!intr_context ());
@@ -363,6 +365,7 @@ intr_handler (struct intr_frame *frame)
 
   /* Invoke the interrupt's handler. */
   handler = intr_handlers[frame->vec_no];
+
   if (handler != NULL)
     handler (frame);
   else if (frame->vec_no == 0x27 || frame->vec_no == 0x2f)
@@ -375,16 +378,16 @@ intr_handler (struct intr_frame *frame)
     unexpected_interrupt (frame);
 
   /* Complete the processing of an external interrupt. */
-  if (external) 
+  if (external)
     {
       ASSERT (intr_get_level () == INTR_OFF);
       ASSERT (intr_context ());
 
       in_external_intr = false;
-      pic_end_of_interrupt (frame->vec_no); 
+      pic_end_of_interrupt (frame->vec_no);
 
-      if (yield_on_return) 
-        thread_yield (); 
+      if (yield_on_return)
+        thread_yield ();
     }
 }
 
@@ -401,14 +404,14 @@ unexpected_interrupt (const struct intr_frame *f)
      unexpected interrupt the first time and fairly often after
      that, but one that occurs many times will not overwhelm the
      console. */
-  if ((n & (n - 1)) == 0)
+  if ((n & (n - 1)) == 0)  //0x110 & 0x101 => 0, so n is power of 2
     printf ("Unexpected interrupt %#04x (%s)\n",
     f->vec_no, intr_names[f->vec_no]);
 }
 
 /* Dumps interrupt frame F to the console, for debugging. */
 void
-intr_dump_frame (const struct intr_frame *f) 
+intr_dump_frame (const struct intr_frame *f)
 {
   uint32_t cr2;
 
@@ -432,7 +435,7 @@ intr_dump_frame (const struct intr_frame *f)
 
 /* Returns the name of interrupt VEC. */
 const char *
-intr_name (uint8_t vec) 
+intr_name (uint8_t vec)
 {
   return intr_names[vec];
 }
