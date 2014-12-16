@@ -11,6 +11,7 @@ enum intr_level
     INTR_ON               /* Interrupts enabled. */
   };
 
+
 enum intr_level intr_get_level (void);
 enum intr_level intr_set_level (enum intr_level);
 enum intr_level intr_enable (void);
