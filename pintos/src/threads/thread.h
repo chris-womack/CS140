@@ -99,7 +99,8 @@ struct thread
   struct list_elem elem;              /* List element. */
 
   int64_t sleep_end;                 /* Sleep End Ticks */
-  
+  struct list waiting_locks;      /* Use by priority-donate-multiple, list of lock */
+  struct list owning_locks;       
 #ifdef USERPROG
   /* Owned by userprog/process.c. */
   uint32_t *pagedir;                  /* Page directory. */
@@ -146,9 +147,9 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 /// @describe thread's list_less_func implementation
-/// @return true if a's priotiy is less than b
 bool thread_compare( const struct list_elem *a, const struct list_elem *b, void *aux );
 
 void print_thread_list( const char *label, const struct list *toPrint );
 
+void thread_preemption (void);
 #endif /* threads/thread.h */

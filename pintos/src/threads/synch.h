@@ -20,16 +20,21 @@ void sema_self_test (void);
 void printSema( const char *prompt, struct semaphore *sema );
 
 /* Lock. */
-struct lock 
-  {
-    struct thread *holder;      /* Thread holding lock (for debugging). */
-    struct semaphore semaphore; /* Binary semaphore controlling access. */
-  };
+struct lock {
+  struct thread *holder;      /* Thread holding lock (for debugging). */
+  struct semaphore semaphore; /* Binary semaphore controlling access. */
+  int holder_priority;
+  struct list_elem waitelem;    /* List Element */
+  struct list_elem ownelem;
+};
 void lock_init (struct lock *);
 void lock_acquire (struct lock *);
 bool lock_try_acquire (struct lock *);
 void lock_release (struct lock *);
 bool lock_held_by_current_thread (const struct lock *);
+
+/// @describe lock's list_less_func implementation
+bool lock_compare( const struct list_elem *a, const struct list_elem *b, void *aux);
 
 /* Condition variable. */
 struct condition 
@@ -41,7 +46,7 @@ void cond_init (struct condition *);
 void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);
 void cond_broadcast (struct condition *, struct lock *);
-
+bool cond_compare (const struct list_elem *a, const struct list_elem *b, void *aux);
 /* Optimization barrier.
 
    The compiler will not reorder operations across an
