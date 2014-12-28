@@ -20,6 +20,12 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
+#define THREAD_NICE_MAX 20
+#define THREAD_NICE_MIN -20
+
+#define RECENT_CPU_DIV_K_FIXPOINT integer_to_fixedpoint (4)
+#define NICE_MUL_K_FIXPOINT integer_to_fixedpoint (2)
+
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -36,6 +42,8 @@ static struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
+
+static int load_avg;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
@@ -93,6 +101,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  load_avg = 0;
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();//get stack pointer and use it to determine current thread location
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -406,33 +415,42 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED)
+thread_set_nice (int nice)
 {
-  /* Not yet implemented. */
+  enum intr_level old_level = intr_disable();
+  thread_current()->nice = nice;
+  thread_recalc_priority();
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable();
+  int nice = thread_current()->nice;
+  intr_set_level(old_level);
+  return nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable();
+  int avg = 100 * load_avg;
+  intr_set_level (old_level);
+  return avg;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable();
+  int recent_cpu = 100 * thread_current()->recent_cpu;
+  intr_set_level (old_level);
+  return recent_cpu;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -520,6 +538,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->nice = 0;
   list_init (&t->waiting_locks);
   list_init (&t->owning_locks);
   list_push_back (&all_list, &t->allelem);
@@ -647,4 +666,55 @@ bool thread_compare( const struct list_elem *a, const struct list_elem *b, void 
   enum compare_order *order = (enum compare_order *)aux;
   //  printf( "thread #%d, priority: #%d compare to thread #%d, priority: #%d", aT-> );
   return ((*order) == THREAD_COMPARE_ASC ) ? at->priority <= bt->priority : at->priority > bt->priority;
+}
+
+void
+thread_recalc_priority (void) {
+  //priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+  if (thread_current() != idle_thread) {
+    int pri_max_f = integer_to_fixedpoint (PRI_MAX);
+    int nice_f = integer_to_fixedpoint (thread_get_nice());
+    int recent_cpu_f = integer_to_fixedpoint (thread_get_recent_cpu());
+    
+    int a = fixedpoint_sub (pri_max_f, (fixedpoint_div(recent_cpu_f, RECENT_CPU_DIV_K_FIXPOINT)));
+    int b = fixedpoint_mul (nice_f, NICE_MUL_K_FIXPOINT);
+    thread_set_priority (fixedpoint_to_integer (fixedpoint_sub (a, b)));
+  }
+}
+
+void 
+thread_inc_recent_cpu (void) {
+  if (thread_current() != idle_thread)
+    thread_current()->recent_cpu++;
+}
+
+void 
+thread_recalc_recent_cpu (void) {
+  if (thread_current() != idle_thread) {
+    //thread_current()->recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice.
+    int a = integer_to_fixedpoint (2 * thread_get_load_avg());
+    int b = integer_to_fixedpoint (2 * thread_get_load_avg() + 1);  
+    int recent_cpu_f = integer_to_fixedpoint (thread_get_recent_cpu());
+    int c = fixedpoint_mul (fixedpoint_div (a, b), recent_cpu_f);
+    thread_current()->recent_cpu = fixedpoint_to_integer (c) + thread_get_nice();
+  }
+}
+
+void
+thread_recalc_load_avg (void) {
+  //load_avg = (59/60)*load_avg + (1/60)*ready_threads.
+  int a = integer_to_fixedpoint (59);
+  int b = integer_to_fixedpoint (60);
+  int c = integer_to_fixedpoint (1);
+
+  int ready_num_f;
+  if ( thread_current() != idle_thread )
+    ready_num_f = integer_to_fixedpoint (list_size (&ready_list) + 1);
+  else
+    ready_num_f = integer_to_fixedpoint (list_size (&ready_list));
+
+  int d = fixedpoint_mul (fixedpoint_div (a, b), integer_to_fixedpoint(load_avg));
+  int e = fixedpoint_mul (fixedpoint_div (c, b), ready_num_f);
+  load_avg = fixedpoint_to_integer (fixedpoint_add (d, e));
+  
 }

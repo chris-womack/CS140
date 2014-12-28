@@ -16,6 +16,8 @@
 #if TIMER_FREQ > 1000
 #error TIMER_FREQ <= 1000 recommended
 #endif
+/* For 4.4BSD Scheduler */
+#define THREAD_RECALC_PRIO 4
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -107,10 +109,8 @@ timer_sleep (int64_t ticks)/*Reimplement*/
   enum compare_order order = THREAD_COMPARE_DEC;
   struct thread *cur = thread_current();
   cur->sleep_end = ticks + start;
-  //list_push_back ( &sleep_list, &cur->allelem );
   list_insert_ordered( &sleep_list, &cur->elem, thread_compare, &order );
   enum intr_level old_level = intr_disable();
-  //printf( "sleep thread with priority : %d for %d ticks\n", cur->priority, ticks );
   thread_block();
   intr_set_level(old_level);
 }
@@ -190,24 +190,27 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  struct list_elem *e;
-  size_t sleep_size = list_size ( &sleep_list );
-  struct thread *t;
-  enum compare_order order = THREAD_COMPARE_DEC;
-
-  while ( sleep_size-- ) { //interate the sleep list to find thread to wakeup
-    e = list_pop_front( &sleep_list );
-    t = list_entry( e, struct thread, elem );
-    if ( t->sleep_end <= ticks && t->sleep_end != 0 ) {//if this thread should be wakeup 
-      thread_unblock( t );
-      //      printf( "unblock thread with priority: %d\n", t->priority );
+  if ( thread_mlfqs ) {
+    thread_inc_recent_cpu();
+    if ( ticks % TIMER_FREQ == 0 ) {
+      thread_recalc_load_avg();
+      thread_recalc_recent_cpu();
     }
-    else //otherwise, push back to list
-      list_push_back( &sleep_list, e );
+      
+    if ( ticks % THREAD_RECALC_PRIO == 0 )
+      thread_recalc_priority();
+
   }
-  //re-sort the list
-  //list_sort( &sleep_list, thread_compare, &order );
-  
+  size_t sleep_size = list_size ( &sleep_list );
+  while ( sleep_size-- ) { //interate the sleep list to find thread to wakeup
+    struct list_elem *e = list_pop_front( &sleep_list );
+    struct thread *t = list_entry( e, struct thread, elem );
+    if (t->sleep_end <= ticks && t->sleep_end != 0)//if this thread should be wakeup 
+      thread_unblock(t);
+    else //otherwise, push back to list
+      list_push_back(&sleep_list, e);
+    //this function can remove all the sleep threads need to wake up
+  }  
   thread_tick ();
 }
 

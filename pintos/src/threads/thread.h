@@ -108,6 +108,10 @@ struct thread
 
   /* Owned by thread.c. */
   unsigned magic;                     /* Detects stack overflow. */
+
+  /* Use for 4.4BSD Scheduler */
+  int nice;
+  int recent_cpu;
 };
 
 /* If false (default), use round-robin scheduler.
@@ -152,4 +156,12 @@ bool thread_compare( const struct list_elem *a, const struct list_elem *b, void 
 void print_thread_list( const char *label, const struct list *toPrint );
 
 void thread_preemption (void);
+
+void thread_recalc_priority (void);
+
+void thread_inc_recent_cpu(void);
+
+void thread_recalc_recent_cpu(void);
+
+void thread_recalc_load_avg(void);
 #endif /* threads/thread.h */
