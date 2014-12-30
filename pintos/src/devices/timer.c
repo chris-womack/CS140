@@ -95,8 +95,9 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks)/*Reimplement*/
 {
-  int64_t start = timer_ticks ();
+  if (ticks <= 0) return;
 
+  int64_t start = timer_ticks ();
   ASSERT (intr_get_level () == INTR_ON);
   //  while (timer_elapsed (start) < ticks)
   //    thread_yield ()
@@ -190,28 +191,33 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+
   if ( thread_mlfqs ) {
     thread_inc_recent_cpu();
     if ( ticks % TIMER_FREQ == 0 ) {
       thread_recalc_load_avg();
-      thread_recalc_recent_cpu();
+      thread_foreach(thread_recalc_recent_cpu, NULL);
+      //thread_recalc_recent_cpu (thread_current, NULL);
+    } 
+     
+    if ( ticks % THREAD_RECALC_PRIO == 0 ) {
+      thread_foreach(thread_recalc_priority, NULL);
+      //thread_recalc_priority (thread_current(), NULL);
     }
-      
-    if ( ticks % THREAD_RECALC_PRIO == 0 )
-      thread_recalc_priority();
-
   }
-  size_t sleep_size = list_size ( &sleep_list );
+  size_t sleep_size = list_size (&sleep_list);
   while ( sleep_size-- ) { //interate the sleep list to find thread to wakeup
     struct list_elem *e = list_pop_front( &sleep_list );
     struct thread *t = list_entry( e, struct thread, elem );
-    if (t->sleep_end <= ticks && t->sleep_end != 0)//if this thread should be wakeup 
+    if (t->sleep_end <= ticks && t->sleep_end != 0){//if this thread should be wakeup
+      t->sleep_end = 0;
       thread_unblock(t);
-    else //otherwise, push back to list
+    } else //otherwise, push back to list
       list_push_back(&sleep_list, e);
     //this function can remove all the sleep threads need to wake up
-  }  
-  thread_tick ();
+  }
+  thread_tick();
+  thread_preemption();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

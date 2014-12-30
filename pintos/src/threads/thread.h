@@ -157,11 +157,11 @@ void print_thread_list( const char *label, const struct list *toPrint );
 
 void thread_preemption (void);
 
-void thread_recalc_priority (void);
+void thread_recalc_priority (struct thread *t, void *aux);
 
 void thread_inc_recent_cpu(void);
 
-void thread_recalc_recent_cpu(void);
+void thread_recalc_recent_cpu(struct thread *t, void *aux);
 
 void thread_recalc_load_avg(void);
 #endif /* threads/thread.h */
