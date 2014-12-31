@@ -107,10 +107,10 @@ timer_sleep (int64_t ticks)/*Reimplement*/
    * CPU is schedule to this thread anytime. If the sleep time is less than
    * ticks, this progress will begin agin.
    */
-  enum compare_order order = THREAD_COMPARE_DEC;
+  enum compare_order order = THREAD_COMPARE_SLEEP_END;
   struct thread *cur = thread_current();
   cur->sleep_end = ticks + start;
-  list_insert_ordered( &sleep_list, &cur->elem, thread_compare, &order );
+  list_insert_ordered(&sleep_list, &cur->elem, thread_compare, &order);
   enum intr_level old_level = intr_disable();
   thread_block();
   intr_set_level(old_level);
@@ -191,7 +191,7 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-
+  thread_tick();
   if ( thread_mlfqs ) {
     thread_inc_recent_cpu();
     if ( ticks % TIMER_FREQ == 0 ) {
@@ -205,18 +205,19 @@ timer_interrupt (struct intr_frame *args UNUSED)
       //thread_recalc_priority (thread_current(), NULL);
     }
   }
-  size_t sleep_size = list_size (&sleep_list);
-  while ( sleep_size-- ) { //interate the sleep list to find thread to wakeup
-    struct list_elem *e = list_pop_front( &sleep_list );
+  struct list_elem *e = list_begin (&sleep_list);
+  while (e != list_end (&sleep_list)) { //interate the sleep list to find thread to wakeup
     struct thread *t = list_entry( e, struct thread, elem );
     if (t->sleep_end <= ticks && t->sleep_end != 0){//if this thread should be wakeup
       t->sleep_end = 0;
+      list_remove(e);
       thread_unblock(t);
-    } else //otherwise, push back to list
-      list_push_back(&sleep_list, e);
+      e = list_begin (&sleep_list);
+    } else
+      break;
     //this function can remove all the sleep threads need to wake up
   }
-  thread_tick();
+
   thread_preemption();
 }
 

@@ -16,7 +16,8 @@ enum thread_status
 
 enum compare_order {
   THREAD_COMPARE_ASC,
-  THREAD_COMPARE_DEC
+  THREAD_COMPARE_DEC,
+  THREAD_COMPARE_SLEEP_END
 };
 
 /* Thread identifier type.

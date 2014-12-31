@@ -677,7 +677,14 @@ bool thread_compare( const struct list_elem *a, const struct list_elem *b, void 
   struct thread *at = list_entry( a, struct thread, elem );
   struct thread *bt = list_entry( b, struct thread, elem );
   enum compare_order *order = (enum compare_order *)aux;
-  return ((*order) == THREAD_COMPARE_ASC ) ? at->priority <= bt->priority : at->priority > bt->priority;
+  if ( *order == THREAD_COMPARE_DEC )
+    return at->priority > bt->priority;
+  else if ( *order == THREAD_COMPARE_ASC )
+    return at->priority <= bt->priority;
+  else if ( *order == THREAD_COMPARE_SLEEP_END )
+    return at->sleep_end <= bt->sleep_end;
+  else
+    return false;
 }
 
 void
