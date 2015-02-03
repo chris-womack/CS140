@@ -214,6 +214,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   off_t file_ofs;
   bool success = false;
   int i;
+  char *save_ptr;
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
@@ -221,8 +222,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
-  /* Open executable file. */
-  file = filesys_open (file_name);
+  /* Open executable file. */  
+  char *exec_name = strtok_r ((char*)file_name, " ",  &save_ptr);
+  file = filesys_open (exec_name);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -305,6 +307,55 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (!setup_stack (esp))
     goto done;
 
+  /* Arguments parsing onto the stack */
+  char *argv = (char *)0x7c00; //magic initial value
+  char **argvs = malloc(2 * sizeof(char *)); //act like a dynamic grow container
+  int argc = 0, argvs_size = 2;
+  size_t sp;
+
+  /*
+    Splict the argument strings into arguments,
+    and push them on to the stack(with random sequences), 
+    save the stack pointers in the container ARGVS
+  */
+  for (; argv != NULL; argv = strtok_r (NULL, " ", &save_ptr)) {
+    *esp -= strlen (argv) + 1;
+    argc++;
+    if (argc > argvs_size) {
+      argvs_size *= 2;
+      argvs = realloc (argvs, argvs_size * sizeof (char *));
+    }
+    argvs[argc] = *esp;
+    memcpy (*esp, argv, strlen(argv)+1);
+  }
+  argvs[argc] = 0; //the last one is 0 as the standard C requires.
+
+  /* Then try word-align */
+  sp = (size_t)*esp;
+  if ( sp % 4 != 0 ) {
+    *esp -= sp % 4;
+    memcpy (*esp, 0, sp % 4);
+  }
+  
+  /* Push the ARGVS onto the stack from right to left */
+  for (i = argc; i > 0; i--) {
+    *esp -= sizeof(argvs[i]);
+    memcpy (*esp, &argvs[i], sizeof(argvs[i]));
+  }
+  *esp -= sizeof(argvs[0]);
+  memcpy (*esp, argvs, sizeof(argvs[0]));
+  
+  /* push ARGC */
+  *esp -= sizeof(argc);
+  memcpy (*esp, &argc, sizeof(argc));
+  
+  /* push return address, 0 at this case */
+  *esp -= sizeof(int);
+  memcpy (*esp, 0, sizeof(int));
+  
+  /* free all memory */
+  free (argvs);  
+  
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 

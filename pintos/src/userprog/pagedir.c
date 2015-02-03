@@ -26,25 +26,25 @@ pagedir_create (void)
    references. */
 void
 pagedir_destroy (uint32_t *pd) 
-{
+{ 
   uint32_t *pde;
 
   if (pd == NULL)
     return;
 
   ASSERT (pd != init_page_dir);
-  for (pde = pd; pde < pd + pd_no (PHYS_BASE); pde++)
-    if (*pde & PTE_P) 
+  for (pde = pd; pde < pd + pd_no (PHYS_BASE); pde++) //for all PDE in PD
+    if (*pde & PTE_P) //if page(should be a page table) pointed by PDE is present
       {
-        uint32_t *pt = pde_get_pt (*pde);
+        uint32_t *pt = pde_get_pt (*pde); //get the page table(PT)
         uint32_t *pte;
         
-        for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
-          if (*pte & PTE_P) 
-            palloc_free_page (pte_get_page (*pte));
-        palloc_free_page (pt);
+        for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++) //for all PTE in PT
+          if (*pte & PTE_P) // if page pointed by PTE is present
+            palloc_free_page (pte_get_page (*pte)); //free the page
+        palloc_free_page (pt); //free PT
       }
-  palloc_free_page (pd);
+  palloc_free_page (pd);//free PD
 }
 
 /* Returns the address of the page table entry for virtual
