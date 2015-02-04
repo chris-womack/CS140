@@ -4,7 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-
+#include "threads/synch.h"
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -105,6 +105,10 @@ struct thread
 #ifdef USERPROG
   /* Owned by userprog/process.c. */
   uint32_t *pagedir;                  /* Page directory. */
+  int intr_ret_status;                     /* Interrupt return status */
+  struct semaphore wait_child_load;  /* Semaphore for wating child to load executable */
+  struct thread *parent;            /* Parent process */
+  bool child_load_success;         /* Flag for child process loading */
 #endif
 
   /* Owned by thread.c. */
@@ -112,7 +116,7 @@ struct thread
 
   /* Use for 4.4BSD Scheduler */
   int nice;
-  int recent_cpu;
+  int recent_cpu;  
 };
 
 /* If false (default), use round-robin scheduler.

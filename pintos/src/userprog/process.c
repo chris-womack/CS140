@@ -60,7 +60,10 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
-
+  
+  /* Notifiy the parent */
+  thread_current()->parent->child_load_success = success;
+  sema_up (&thread_current()->parent->wait_child_load);
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
@@ -88,6 +91,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  while (true);
   return -1;
 }
 
@@ -318,7 +322,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
     and push them on to the stack(with random sequences), 
     save the stack pointers in the container ARGVS
   */
-  for (; argv != NULL; argv = strtok_r (NULL, " ", &save_ptr)) {
+  for (argv = strtok_r (NULL, " ", &save_ptr);
+       argv != NULL; argv = strtok_r (NULL, " ", &save_ptr)) {
     *esp -= strlen (argv) + 1;
     argc++;
     if (argc > argvs_size) {
@@ -332,26 +337,27 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Then try word-align */
   sp = (size_t)*esp;
+  int empty_str = 0x0;
   if ( sp % 4 != 0 ) {
     *esp -= sp % 4;
-    memcpy (*esp, 0, sp % 4);
+    memcpy (*esp, &empty_str, sp % 4);
   }
   
   /* Push the ARGVS onto the stack from right to left */
-  for (i = argc; i > 0; i--) {
+  for (i = argc; i >= 0; i--) {
     *esp -= sizeof(argvs[i]);
     memcpy (*esp, &argvs[i], sizeof(argvs[i]));
   }
-  *esp -= sizeof(argvs[0]);
-  memcpy (*esp, argvs, sizeof(argvs[0]));
+  *esp -= sizeof(argvs);
+  memcpy (*esp, &argvs, sizeof(argvs));
   
   /* push ARGC */
   *esp -= sizeof(argc);
   memcpy (*esp, &argc, sizeof(argc));
   
   /* push return address, 0 at this case */
-  *esp -= sizeof(int);
-  memcpy (*esp, 0, sizeof(int));
+  *esp -= sizeof(empty_str);
+  memcpy (*esp, &empty_str, sizeof(empty_str));
   
   /* free all memory */
   free (argvs);  
