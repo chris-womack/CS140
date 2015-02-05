@@ -181,37 +181,142 @@ int _open (const char *file) {
   lock_release (&fs_lock);
   return fd;
 }
-int _filesize (int fd) {
-  return -1;
-}
 
-int _read (int fd, void *buffer, unsigned length) {
-  return -1;
-}
+/* return -1 if fd not exit in current process's open fles */
+int 
+_filesize (int fd) {
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
 
-int _write (int fd, const void *buffer, unsigned length) {
-  int result = 0;
-  check_valid_ptr (buffer);
-  check_valid_ptr (buffer + length);
-  if (fd == STDOUT_FILENO) { //write to console
-    putbuf (buffer, length);
-    result = length;
+  for (e = list_begin (cur->opened_files); e != list_end (cur->opened_files);
+       e = list_next (e)) {
+    struct file_info *fi = list_entry (e, struct file_info, elem);
+    if ( fi->fd == fd ) {
+      lock_acquire (&fs_lock);
+      int fs = file_length (fi->fptr);
+      lock_release (&fs_lock);
+      return fs;
+    }
   }
-  return result;
-}
-
-void _seek (int fd, unsigned position) {
-
-}
-unsigned _tell (int fd) {
   return 0;
 }
 
-void _close (int fd) {
-
+int 
+_read (int fd, void *buffer, unsigned length) {
+  check_valid_ptr (buffer);
+  check_valid_ptr (buffer+length);
+  
+  if (fd == STDIN_FILENO) {
+    //stdin
+    int i;
+    for (i = 0; i < length; i++)
+      *(uint8_t *)buffer++ = input_getc();
+    return i;
+  } else {
+    //opened file
+    struct list_elem *e;
+    struct thread *cur = thread_current ();
+    for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+         e = list_next (e)) {
+      struct file_info *fi = list_entry (e, struct file_info, elem);
+      if (fi->fd == fd) {
+        lock_acquire (&fs_lock);
+        int read_size = file_read (fi->fptr, buffer, length);
+        lock_release (&fs_lock);
+        return read_size;
+      }
+    }
+  }
+  return -1;
 }
 
-static void check_valid_ptr (void *ptr) {
+int 
+_write (int fd, const void *buffer, unsigned length) {
+  check_valid_ptr (buffer);
+  check_valid_ptr (buffer + length);
+  if (fd == STDOUT_FILENO) { 
+    //write to console
+    putbuf (buffer, length);
+    return length;
+  } else {
+    //opened file
+    struct list_elem *e;
+    struct thread *cur = thread_current ();
+    for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+         e = list_next (e)) {
+      struct file_info *fi = list_entry (e, struct file_info, elem);
+      if (fi->fd == fd) {
+        lock_acquire (&fs_lock);
+        int write_size = file_write (fi->fptr, buffer, size);
+        lock_release (&fs_lock);
+        return write_size;
+      }
+    }
+  }
+  return -1;
+}
+
+void 
+_seek (int fd, unsigned position) {
+  if (position < 0)
+    _exit (-1);
+
+  struct list_elem *e;
+  struct thread *cur = thread_current ();
+  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+       e = list_next (e)) {
+    struct file_info *fi = list_entry (e, struct file_info, elem);
+    if (fi->fd == fd) {
+      lock_acquire (&fs_lock);
+      int32_t length = file_length (fi->fptr);
+      if (position > length)
+        position = (unsigned)length;
+
+      file_seek (fi->fptr, position);
+      lock_release (&fs_lock);
+      return;
+    }
+  }
+  //it does nothing when fd provided doesn't exist in current process's openfiles list
+}
+
+unsigned
+_tell (int fd) {
+  struct list_elem *e;
+  struct thread *cur = thread_current ();
+  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+       e = list_next (e)) {
+    struct file_info *fi = list_entry (e, struct file_info, elem);
+    if (fi->fd == fd) {
+      lock_acquire (&fs_lock);
+      int32_t position = file_tell (fi->fptr);
+      lock_release (&fs_lock);
+      return position;
+    }
+  }
+  return -1;
+}
+
+void 
+_close (int fd) {
+  struct list_elem *e;
+  struct thread *cur = thread_current ();
+  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+       e = list_next (e)) {
+    struct file_info *fi = list_entry (e, struct file_info, elem);
+    if (fi->fd == fd) {
+      e = list_remove (&fi->elem);
+      lock_acquire (&fs_lock);
+      file_close (fi->fptr);
+      lock_release (&fs_lock);
+      free (fi);
+      break;
+    }
+  }
+}
+
+static void 
+check_valid_ptr (void *ptr) {
   if (!is_user_vaddr (ptr)
       || ptr == NULL) {
     printf ("Bad Access Memory %p\n",ptr);

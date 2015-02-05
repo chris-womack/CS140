@@ -105,7 +105,9 @@ process_exit (void)
   while (!list_empty (&list)) {
       struct list_elem *e = list_pop_front (&list);
       struct file_info *fi = list_entry (e, struct file_info, elem);
+      lock_acquire (&fs_lock);
       file_close (fi->fptr);
+      lock_release (&fs_lock);
       free (fi);
   }
 
