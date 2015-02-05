@@ -30,6 +30,16 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+/* Data Structure for representing a file owns by a process */
+struct file_info {
+  struct file* fptr; /* Pointer for file struct created by filesys */
+  int fd;            /* File Desription */
+  struct list_elem elem; /* List elem */
+};
+
+/* Implement function to use list_insert_order. */
+bool file_info_compare( const struct list_elem *a, const struct list_elem *b, void *aux );
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -109,6 +119,7 @@ struct thread
   struct semaphore wait_child_load;  /* Semaphore for wating child to load executable */
   struct thread *parent;            /* Parent process */
   bool child_load_success;         /* Flag for child process loading */
+  struct list opened_files;       /* List for files opened by process */  
 #endif
 
   /* Owned by thread.c. */

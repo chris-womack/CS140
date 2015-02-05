@@ -5,10 +5,9 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "filesys/filesys.h"
 
 static void syscall_handler (struct intr_frame *);
-
-static void check_valid_user_ptr (void *ptr);
 
 void
 syscall_init (void) 
@@ -16,8 +15,9 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-uint32_t syscall_get_argument (uint32_t *esp, int offset) {
-  check_valid_user_ptr (esp+offset);
+uint32_t
+syscall_get_argument (uint32_t *esp, int number) {
+  check_valid_ptr (esp+offset);
   return *(esp+offset);
 }
 
@@ -57,7 +57,7 @@ syscall_handler (struct intr_frame *f)
     break;
 
   case SYS_FILESIZE:
-    //f->eax = _file_size (syscall_get_argument (sp, 1));
+    f->eax = _filesize (syscall_get_argument (sp, 1));
     break;
 
   case SYS_READ:
@@ -76,7 +76,7 @@ syscall_handler (struct intr_frame *f)
     break;
 
   case SYS_TELL:
-    //f->eax = _tell (syscall_get_argument (sp, 1));
+    f->eax = _tell (syscall_get_argument (sp, 1));
     break;
 
   case SYS_CLOSE:
@@ -112,12 +112,14 @@ syscall_handler (struct intr_frame *f)
    This should be seldom used, because you lose some information about possible deadlock 
    situations, etc.
 */
-void _halt (void){
+void
+_halt (void){
   shutdown_power_off();
 }
 
 /* Terminates the current user program, returning STATUS to the kernel. */
-void _exit (int status) {
+void 
+_exit (int status) {
   thread_current()->intr_ret_status = status;
   thread_exit ();
 }
@@ -129,8 +131,10 @@ void _exit (int status) {
    Thus, parent process cannot return from exec 
    until it knows whether the child process successfully load its executable. 
 */
-tid_t _exec (const char *cmd_line) {
-  check_valid_user_ptr (cmd_line);
+tid_t
+_exec (const char *cmd_line) {
+  check_valid_ptr (cmd_line);
+  check_valid_ptr (cmd_line+strlen (cmd_line));
 
   tid_t new_process = process_execute (cmd_line);
   if (new_process == TID_ERROR)
@@ -144,20 +148,38 @@ tid_t _exec (const char *cmd_line) {
     return -1;
 }
 
-int _wait (pid_t) {
-  return -1;
+int
+_wait (tid_t p) {
+  return process_wait (p);
 }
 
-int _create (const char *file, unsigned initial_size) {
-  return -1;
+bool 
+_create (const char *file, unsigned initial_size) {
+  check_valid_ptr (file);
+  check_valid_ptr (file + strlen (file));
+  lock_acquire (&fs_lock);
+  bool success = filesys_create (file, initial_size);
+  lock_release (&fs_lock);
+  return success;
 }
 
-int _remove (const char *file) {
-  return -1;
+bool _remove (const char *file) {
+  check_valid_ptr (file);
+  check_valid_ptr (file + strlen (file));
+  lock_acquire (&fs_lock);
+  bool success = filesys_remove (file);
+  lock_release (&fs_lock);
+  return success;
 }
 
 int _open (const char *file) {
-  return -1;
+  check_valid_ptr (file);
+  check_valid_ptr (file + strlen (file));
+  lock_acquire (&fs_lock);
+  struct file *op_fptr = filesys_open (file);
+  int fd = process_add_openfile (op_fptr);
+  lock_release (&fs_lock);
+  return fd;
 }
 int _filesize (int fd) {
   return -1;
@@ -166,15 +188,16 @@ int _filesize (int fd) {
 int _read (int fd, void *buffer, unsigned length) {
   return -1;
 }
+
 int _write (int fd, const void *buffer, unsigned length) {
   int result = 0;
-  check_valid_user_ptr (buffer);
-  check_valid_user_ptr (buffer + length);
+  check_valid_ptr (buffer);
+  check_valid_ptr (buffer + length);
   if (fd == STDOUT_FILENO) { //write to console
     putbuf (buffer, length);
     result = length;
   }
-  return length;
+  return result;
 }
 
 void _seek (int fd, unsigned position) {
@@ -188,8 +211,10 @@ void _close (int fd) {
 
 }
 
-static void check_valid_user_ptr (void *ptr) {
+static void check_valid_ptr (void *ptr) {
   if (!is_user_vaddr (ptr)
-      || ptr == NULL)
+      || ptr == NULL) {
+    printf ("Bad Access Memory %p\n",ptr);
     _exit (-1);
+  }
 }

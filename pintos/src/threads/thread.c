@@ -560,6 +560,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
 #ifdef USERPROG
   sema_init (&t->wait_child_load, 0);
+  list_init (&t->opened_files);
 #endif
 
   list_init (&t->waiting_locks);
@@ -746,4 +747,12 @@ thread_recalc_load_avg (void) {
   int c = mix_div (ready_num_f, 60);
   
   load_avg = fixedpoint_add (b, c);
+}
+
+bool 
+file_info_compare( const struct list_elem *a, const struct list_elem *b, 
+                   void *aux UNUSED ) {
+  const struct file_info *fi_a = list_entry (a, struct file_info, elem);
+  const struct file_info *fi_b = list_entry (b, struct file_info, elem);
+  return fi_a->fd <= fi_b->fd;
 }

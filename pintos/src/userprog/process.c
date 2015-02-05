@@ -100,6 +100,15 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+
+  /* close all files opened by process */
+  while (!list_empty (&list)) {
+      struct list_elem *e = list_pop_front (&list);
+      struct file_info *fi = list_entry (e, struct file_info, elem);
+      file_close (fi->fptr);
+      free (fi);
+  }
+
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -520,3 +529,21 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+int 
+process_add_openfile (struct file *fptr) {
+  struct file_info *fi = malloc (sizeof (struct file_info));
+  fi->fptr = fptr;
+  thread *current_process = thread_current ();
+  //fi->fd = 2 + list_size (&current_process->opened_files);
+  if (list_empty (&current_process->opened_files))
+    fi->fd = 2;
+  else {
+    struct list_elem *e = list_tail (&current_process->opened_files);
+    fi->fd = list_entry (e, struct file_info, elem)->fd+1;
+  }
+  list_insert_ordered (&current_process->opened_files, &fi->elem, file_info_compare, NULL);
+  return fi->fd;
+}
+
+
