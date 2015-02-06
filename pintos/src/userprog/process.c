@@ -42,6 +42,10 @@ process_execute (const char *file_name)
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+  /* There could be race between caller and callee, if caller wins, we set process flag at this time */
+  struct thread *child = thread_get_by_id (tid);
+  child->is_process = true;
+
   return tid;
 }
 
@@ -53,14 +57,15 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
-
+  thread_current ()->is_process = true;
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+  lock_acquire (&fs_lock);
   success = load (file_name, &if_.eip, &if_.esp);
-  
+  lock_release (&fs_lock);
   /* Notifiy the parent */
   thread_current()->parent->child_load_success = success;
   sema_up (&thread_current()->parent->wait_child_load);
@@ -89,21 +94,29 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  while (true);
-  return -1;
+  struct thread *child = thread_get_by_id (child_tid);
+  if (!child->is_process 
+      || child->parent != thread_current ()
+      || child->is_already_call_wait)
+    return -1;
+
+  child->is_already_call_wait = true;
+  if (child->process_exit_status == EXIT_NOT_EXIT) //still running
+    sema_down (&child->being_waited);//wait for it
+  return child->process_exit_status;
 }
 
-/* Free the current process's resources. */
+/* Free the current process's resources. It may be a bad design. */
 void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
 
   /* close all files opened by process */
-  while (!list_empty (&list)) {
-      struct list_elem *e = list_pop_front (&list);
+  while (!list_empty (&cur->opened_files)) {
+      struct list_elem *e = list_pop_front (&cur->opened_files);
       struct file_info *fi = list_entry (e, struct file_info, elem);
       lock_acquire (&fs_lock);
       file_close (fi->fptr);
@@ -129,6 +142,11 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+  if (cur->is_process) {
+    printf ("%s: exit(%d)\n",thread_name(), cur->process_exit_status);
+    /* Notify processes waiting for it */
+    sema_up (&cur->being_waited);
+  }
 }
 
 /* Sets up the CPU for running user code in the current
@@ -536,7 +554,7 @@ int
 process_add_openfile (struct file *fptr) {
   struct file_info *fi = malloc (sizeof (struct file_info));
   fi->fptr = fptr;
-  thread *current_process = thread_current ();
+  struct thread *current_process = thread_current ();
   //fi->fd = 2 + list_size (&current_process->opened_files);
   if (list_empty (&current_process->opened_files))
     fi->fd = 2;
@@ -544,7 +562,7 @@ process_add_openfile (struct file *fptr) {
     struct list_elem *e = list_tail (&current_process->opened_files);
     fi->fd = list_entry (e, struct file_info, elem)->fd+1;
   }
-  list_insert_ordered (&current_process->opened_files, &fi->elem, file_info_compare, NULL);
+  list_push_back (&(current_process->opened_files), &fi->elem);
   return fi->fd;
 }
 

@@ -20,7 +20,6 @@
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
-
 #define THREAD_NICE_MAX 20
 #define THREAD_NICE_MIN -20
 
@@ -196,11 +195,16 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
   t->sleep_end = 0;
-
 #ifdef USERPROG
-  t->parent = thread_current();
+  sema_init (&t->wait_child_load, 0);
+  sema_init (&t->being_waited, 0);
+  list_init (&t->opened_files);
+  t->process_exit_status = EXIT_NOT_EXIT;
+  t->child_load_success = false;
+  t->is_process = false;
+  t->parent = thread_current ();
+  t->is_already_call_wait = false;
 #endif
-
   /* Prepare thread for first run by initializing its stack.
      Do this atomically so intermediate values for the 'stack'
      member cannot be observed. */
@@ -558,10 +562,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->nice = 0;
   t->recent_cpu = 0;
 
-#ifdef USERPROG
-  sema_init (&t->wait_child_load, 0);
-  list_init (&t->opened_files);
-#endif
 
   list_init (&t->waiting_locks);
   list_init (&t->owning_locks);
@@ -756,3 +756,16 @@ file_info_compare( const struct list_elem *a, const struct list_elem *b,
   const struct file_info *fi_b = list_entry (b, struct file_info, elem);
   return fi_a->fd <= fi_b->fd;
 }
+
+struct thread *
+thread_get_by_id (tid_t tid) {
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, allelem);
+    if (t->tid == tid)
+      return t;
+  }
+  return NULL;
+}
+

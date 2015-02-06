@@ -5,6 +5,10 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/synch.h"
+
+#ifndef EXIT_NOT_EXIT
+#define EXIT_NOT_EXIT 128
+#endif
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -115,11 +119,14 @@ struct thread
 #ifdef USERPROG
   /* Owned by userprog/process.c. */
   uint32_t *pagedir;                  /* Page directory. */
-  int intr_ret_status;                     /* Interrupt return status */
+  int process_exit_status;      /* Interrupt return status */
   struct semaphore wait_child_load;  /* Semaphore for wating child to load executable */
   struct thread *parent;            /* Parent process */
   bool child_load_success;         /* Flag for child process loading */
+  bool is_process;            /* Flag to detect whether it is process or kernel thread */
+  bool is_already_call_wait; /* Flag to detect whether it has been called process_wait */
   struct list opened_files;       /* List for files opened by process */  
+  struct semaphore being_waited; /* Semaphore for being waited by parent */
 #endif
 
   /* Owned by thread.c. */
@@ -180,4 +187,7 @@ void thread_inc_recent_cpu(void);
 void thread_recalc_recent_cpu(struct thread *t, void *aux);
 
 void thread_recalc_load_avg(void);
+
+/* Return NULL if TID not found in all_list */
+struct thread *thread_get_by_id (tid_t tid);
 #endif /* threads/thread.h */
