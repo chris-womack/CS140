@@ -9,5 +9,5 @@ void syscall_init (void);
    If PTR is invalid, (maybe tell the user and)exit the process.
  */
 void check_valid_ptr (void *ptr);
-
+struct lock fs_lock;
 #endif /* userprog/syscall.h */

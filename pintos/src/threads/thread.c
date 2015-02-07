@@ -19,7 +19,9 @@
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
-#define THREAD_MAGIC 0xcd6abf4b
+#define THREAD_MAGIC 0xcd6abf4b 
+const int PROCESS_MAGIC = 0xab77be4b;
+
 #define THREAD_NICE_MAX 20
 #define THREAD_NICE_MIN -20
 
@@ -195,15 +197,20 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
   t->sleep_end = 0;
+
 #ifdef USERPROG
-  sema_init (&t->wait_child_load, 0);
-  sema_init (&t->being_waited, 0);
-  list_init (&t->opened_files);
   t->process_exit_status = EXIT_NOT_EXIT;
   t->child_load_success = false;
-  t->is_process = false;
   t->parent = thread_current ();
   t->is_already_call_wait = false;
+  t->is_process = false;
+  if (aux != NULL) {
+    int *int_ptr = (int *)aux;
+    if (*int_ptr == PROCESS_MAGIC) {
+      t->is_process = true;
+      aux = (void*)(int_ptr+1);
+    }
+  }  
 #endif
   /* Prepare thread for first run by initializing its stack.
      Do this atomically so intermediate values for the 'stack'
@@ -562,7 +569,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->nice = 0;
   t->recent_cpu = 0;
 
-
+#ifdef USERPROG
+  sema_init (&t->wait_child_load, 0);
+  sema_init (&t->being_waited, 0);
+  list_init (&t->opened_files);
+#endif
   list_init (&t->waiting_locks);
   list_init (&t->owning_locks);
   list_push_back (&all_list, &t->allelem);

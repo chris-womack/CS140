@@ -18,7 +18,6 @@ void
 filesys_init (bool format) 
 {
   fs_device = block_get_role (BLOCK_FILESYS);
-  lock_init (&fs_lock);
   if (fs_device == NULL)
     PANIC ("No file system device found, can't initialize file system.");
 

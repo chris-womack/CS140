@@ -10,6 +10,7 @@
 #define EXIT_NOT_EXIT 128
 #endif
 /* States in a thread's life cycle. */
+
 enum thread_status
   {
     THREAD_RUNNING,     /* Running thread. */

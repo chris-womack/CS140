@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -20,6 +21,8 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+extern const int PROCESS_MAGIC;
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -36,16 +39,12 @@ process_execute (const char *file_name)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
-
+  memcpy (fn_copy, &PROCESS_MAGIC, sizeof(int));
+  strlcpy (fn_copy+sizeof(int), file_name, PGSIZE-sizeof(int));
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
-  /* There could be race between caller and callee, if caller wins, we set process flag at this time */
-  struct thread *child = thread_get_by_id (tid);
-  child->is_process = true;
-
   return tid;
 }
 
@@ -57,7 +56,7 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
-  thread_current ()->is_process = true;
+  struct thread *t = thread_current();
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -65,12 +64,13 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   lock_acquire (&fs_lock);
   success = load (file_name, &if_.eip, &if_.esp);
-  lock_release (&fs_lock);
   /* Notifiy the parent */
-  thread_current()->parent->child_load_success = success;
-  sema_up (&thread_current()->parent->wait_child_load);
+  t->parent->child_load_success = success;
+  sema_up (&t->parent->wait_child_load);
+  lock_release (&fs_lock);
+
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  palloc_free_page (file_name-sizeof(int));
   if (!success) 
     thread_exit ();
 
@@ -366,7 +366,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Then try word-align */
   sp = (size_t)*esp;
-  int empty_str = 0x0;
+  int empty_str = argvs[argc];
   if ( sp % 4 != 0 ) {
     *esp -= sp % 4;
     memcpy (*esp, &empty_str, sp % 4);
@@ -377,8 +377,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
     *esp -= sizeof(argvs[i]);
     memcpy (*esp, &argvs[i], sizeof(argvs[i]));
   }
-  *esp -= sizeof(argvs);
-  memcpy (*esp, &argvs, sizeof(argvs));
+  argv = &argvs[0];
+  *esp -= sizeof(char **);
+  memcpy (*esp, &argv, sizeof(char **));
   
   /* push ARGC */
   *esp -= sizeof(argc);
