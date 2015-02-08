@@ -341,37 +341,39 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
 
   /* Arguments parsing onto the stack */
-  char *argv = (char *)0x7c00; //magic initial value
-  char **argvs = malloc(2 * sizeof(char *)); //act like a dynamic grow container
-  int argc = 0, argvs_size = 2;
+  char *argv = NULL; //magic initial value
+  int argc = -1, argvs_size = 2;
+  char **argvs = malloc(argvs_size * sizeof(char *)); //act like a dynamic grow container
   size_t sp;
-
+  int empty_str = 0;
   /*
     Splict the argument strings into arguments,
     and push them on to the stack(with random sequences), 
     save the stack pointers in the container ARGVS
   */
-  for (argv = strtok_r (NULL, " ", &save_ptr);
-       argv != NULL; argv = strtok_r (NULL, " ", &save_ptr)) {
+  for (argv = exec_name;argv != NULL; argv = strtok_r (NULL, " ", &save_ptr)) {
     *esp -= strlen (argv) + 1;
     argc++;
-    if (argc > argvs_size) {
+    if (argc+1 > argvs_size) {
       argvs_size *= 2;
       argvs = realloc (argvs, argvs_size * sizeof (char *));
     }
     argvs[argc] = *esp;
     memcpy (*esp, argv, strlen(argv)+1);
   }
+  argc++;
+  if (argc+1 > argvs_size) {
+    argvs_size *= 2;
+    argvs = realloc (argvs, argvs_size * sizeof (char *));
+  }
   argvs[argc] = 0; //the last one is 0 as the standard C requires.
 
   /* Then try word-align */
   sp = (size_t)*esp;
-  int empty_str = argvs[argc];
   if ( sp % 4 != 0 ) {
     *esp -= sp % 4;
     memcpy (*esp, &empty_str, sp % 4);
   }
-  
   /* Push the ARGVS onto the stack from right to left */
   for (i = argc; i >= 0; i--) {
     *esp -= sizeof(argvs[i]);
