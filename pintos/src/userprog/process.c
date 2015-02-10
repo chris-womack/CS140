@@ -21,7 +21,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-
+static void push (void **esp, char *data, size_t length);
 extern const int PROCESS_MAGIC;
 
 /* Starts a new thread running a user program loaded from
@@ -342,55 +342,36 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Arguments parsing onto the stack */
   char *argv = NULL; //magic initial value
-  int argc = -1, argvs_size = 2;
-  char **argvs = malloc(argvs_size * sizeof(char *)); //act like a dynamic grow container
-  size_t sp;
-  int empty_str = 0;
+  int argc = 0, argvs_size = 2;
+  char **argvs = palloc_get_page (0); //act like a dynamic grow container
   /*
     Splict the argument strings into arguments,
     and push them on to the stack(with random sequences), 
     save the stack pointers in the container ARGVS
   */
   for (argv = exec_name;argv != NULL; argv = strtok_r (NULL, " ", &save_ptr)) {
-    *esp -= strlen (argv) + 1;
-    argc++;
-    if (argc+1 > argvs_size) {
-      argvs_size *= 2;
-      argvs = realloc (argvs, argvs_size * sizeof (char *));
-    }
-    argvs[argc] = *esp;
-    memcpy (*esp, argv, strlen(argv)+1);
-  }
-  argc++;
-  if (argc+1 > argvs_size) {
-    argvs_size *= 2;
-    argvs = realloc (argvs, argvs_size * sizeof (char *));
+    push (esp, argv, sizeof(argv)+1);
+    argvs[argc++] = *esp;
   }
   argvs[argc] = 0; //the last one is 0 as the standard C requires.
 
   /* Then try word-align */
-  sp = (size_t)*esp;
-  if ( sp % 4 != 0 ) {
-    *esp -= sp % 4;
-    memcpy (*esp, &empty_str, sp % 4);
-  }
+  i = (size_t)*esp % 4;
+  if (i)
+    push (esp, &argvs[argc], i);
+
   /* Push the ARGVS onto the stack from right to left */
-  for (i = argc; i >= 0; i--) {
-    *esp -= sizeof(argvs[i]);
-    memcpy (*esp, &argvs[i], sizeof(argvs[i]));
-  }
-  argv = &argvs[0];
-  *esp -= sizeof(char **);
-  memcpy (*esp, &argv, sizeof(char **));
+  for (i = argc; i >= 0; i--)
+    push (esp, &argvs[i], sizeof(char *));
+
+  argv = *esp;
+  push (esp, &argv, sizeof (char **));
   
   /* push ARGC */
-  *esp -= sizeof(argc);
-  memcpy (*esp, &argc, sizeof(argc));
+  push (esp, &argc, sizeof (int));
   
   /* push return address, 0 at this case */
-  *esp -= sizeof(empty_str);
-  memcpy (*esp, &empty_str, sizeof(empty_str));
-  
+  push (esp, &argvs[argc], sizeof (void (*) (void)));
   /* free all memory */
   free (argvs);  
   
@@ -406,6 +387,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
 }
 
 /* load() helpers. */
+
+static void 
+push (void **esp, char *data, size_t length) {
+  *esp -= length;
+  memcpy (*esp, data, length);
+}
 
 static bool install_page (void *upage, void *kpage, bool writable);
 
