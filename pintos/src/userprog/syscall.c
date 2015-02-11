@@ -40,9 +40,10 @@ syscall_get_argument (uint32_t *esp, int number) {
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  uint32_t *sp = f->esp; //suppose all arguments are 4 bytes
   
-  switch (*sp) {
+  uint32_t *sp = f->esp; //suppose all arguments are 4 bytes
+
+  switch (syscall_get_argument (sp, 0)) {
   case SYS_HALT:
     _halt ();
     break;
@@ -339,7 +340,7 @@ void
 check_valid_ptr (void *ptr) {
   if (!is_user_vaddr (ptr)
       || ptr == NULL) {
-    printf ("Bad Access Memory %p\n",ptr);
+    //printf ("Bad Access Memory %p\n",ptr);
     _exit (-1);
   }
 }

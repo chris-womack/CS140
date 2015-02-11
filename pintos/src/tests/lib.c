@@ -19,8 +19,8 @@ vmsg (const char *format, va_list args, const char *suffix)
   static char buf[1024];
 
   snprintf (buf, sizeof buf, "(%s) ", test_name);
-  vsnprintf (buf + strlen (buf), sizeof buf - strlen (buf), format, args);
-  strlcpy (buf + strlen (buf), suffix, sizeof buf - strlen (buf));
+  vsnprintf (buf + strlen (buf), sizeof (buf) - strlen (buf), format, args);
+  strlcpy (buf + strlen (buf), suffix, sizeof (buf) - strlen (buf));
   write (STDOUT_FILENO, buf, strlen (buf));
 }
 

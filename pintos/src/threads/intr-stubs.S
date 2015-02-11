@@ -49,6 +49,7 @@ intr_entry:
 .globl intr_exit
 .func intr_exit
 intr_exit:
+        
         /* Restore caller's registers. */
 	popal
 	popl %gs

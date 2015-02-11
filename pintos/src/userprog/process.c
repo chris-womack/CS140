@@ -21,7 +21,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static void push (void **esp, char *data, size_t length);
+static void push (void **esp, void *data, size_t length);
 extern const int PROCESS_MAGIC;
 
 /* Starts a new thread running a user program loaded from
@@ -42,7 +42,9 @@ process_execute (const char *file_name)
   memcpy (fn_copy, &PROCESS_MAGIC, sizeof(int));
   strlcpy (fn_copy+sizeof(int), file_name, PGSIZE-sizeof(int));
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  char *save_ptr;
+  char *exec_name = strtok_r ((char*)file_name, " ",  &save_ptr);  
+  tid = thread_create (exec_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -80,6 +82,7 @@ start_process (void *file_name_)
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
+  //hex_dump (if_.esp, if_.esp, 0xc0000000-(uint32_t)if_.esp, true);
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
@@ -257,6 +260,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Open executable file. */  
   char *exec_name = strtok_r ((char*)file_name, " ",  &save_ptr);
+  
   file = filesys_open (exec_name);
   if (file == NULL) 
     {
@@ -341,17 +345,23 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
 
   /* Arguments parsing onto the stack */
-  char *argv = NULL; //magic initial value
+  char *argv = NULL;
   int argc = 0, argvs_size = 2;
-  char **argvs = palloc_get_page (0); //act like a dynamic grow container
+  char **argvs = palloc_get_page (0);
+  char **argvs_str = palloc_get_page (0);
   /*
     Splict the argument strings into arguments,
     and push them on to the stack(with random sequences), 
     save the stack pointers in the container ARGVS
   */
   for (argv = exec_name;argv != NULL; argv = strtok_r (NULL, " ", &save_ptr)) {
-    push (esp, argv, sizeof(argv)+1);
-    argvs[argc++] = *esp;
+    //push (esp, argv, strlen(argv)+1);
+    //argvs[argc++] = *esp;
+    argvs_str[argc++] = argv;
+  }
+  for (i = argc-1; i >= 0; i--) {
+    push (esp, argvs_str[i], strlen (argvs_str[i])+1);
+    argvs[i] = *esp;
   }
   argvs[argc] = 0; //the last one is 0 as the standard C requires.
 
@@ -373,7 +383,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* push return address, 0 at this case */
   push (esp, &argvs[argc], sizeof (void (*) (void)));
   /* free all memory */
-  free (argvs);  
+  palloc_free_page (argvs_str);
+  palloc_free_page (argvs);
   
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
@@ -389,7 +400,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 /* load() helpers. */
 
 static void 
-push (void **esp, char *data, size_t length) {
+push (void **esp, void *data, size_t length) {
   *esp -= length;
   memcpy (*esp, data, length);
 }
