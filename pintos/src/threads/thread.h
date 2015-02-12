@@ -128,6 +128,8 @@ struct thread
   bool is_already_call_wait; /* Flag to detect whether it has been called process_wait */
   struct list opened_files;       /* List for files opened by process */  
   struct semaphore being_waited; /* Semaphore for being waited by parent */
+  struct file *executable;       /* Pointer to current process's executable */
+  int wait_exit_status;      /* Status return from exited waiting process. */
 #endif
 
   /* Owned by thread.c. */

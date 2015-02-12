@@ -31,22 +31,31 @@ extern const int PROCESS_MAGIC;
 tid_t
 process_execute (const char *file_name) 
 {
-  char *fn_copy;
+  char *fn_copy, *fn_mutable, *save_ptr, *exec_name;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
+  fn_mutable = palloc_get_page (0);
+  if (fn_mutable == NULL)
+    return TID_ERROR;
+  memcpy (fn_mutable, file_name, PGSIZE);
+  /* Set process 'magic header', so that 
+     thread_create can determine it is a process or kernel thread. */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-  memcpy (fn_copy, &PROCESS_MAGIC, sizeof(int));
+  memcpy (fn_copy, &PROCESS_MAGIC, sizeof(int)); 
   strlcpy (fn_copy+sizeof(int), file_name, PGSIZE-sizeof(int));
+
+  /* Get the executable name */
+  exec_name = strtok_r (fn_mutable, " ",  &save_ptr);  
+
   /* Create a new thread to execute FILE_NAME. */
-  char *save_ptr;
-  char *exec_name = strtok_r ((char*)file_name, " ",  &save_ptr);  
   tid = thread_create (exec_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+  palloc_free_page (fn_mutable);
   return tid;
 }
 
@@ -66,15 +75,18 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   lock_acquire (&fs_lock);
   success = load (file_name, &if_.eip, &if_.esp);
-  /* Notifiy the parent */
-  t->parent->child_load_success = success;
-  sema_up (&t->parent->wait_child_load);
-  lock_release (&fs_lock);
 
   /* If load failed, quit. */
   palloc_free_page (file_name-sizeof(int));
-  if (!success) 
+  if (!success) { 
+    thread_current ()->process_exit_status = -1;
     thread_exit ();
+  } else {
+    /* Notifiy the parent */
+    t->parent->child_load_success = success;
+    sema_up (&t->parent->wait_child_load);
+    lock_release (&fs_lock);
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -100,7 +112,8 @@ int
 process_wait (tid_t child_tid) 
 {
   struct thread *child = thread_get_by_id (child_tid);
-  if (!child->is_process 
+  if ( !child
+      || !child->is_process 
       || child->parent != thread_current ()
       || child->is_already_call_wait)
     return -1;
@@ -108,10 +121,10 @@ process_wait (tid_t child_tid)
   child->is_already_call_wait = true;
   if (child->process_exit_status == EXIT_NOT_EXIT) //still running
     sema_down (&child->being_waited);//wait for it
-  return child->process_exit_status;
+  return thread_current ()->wait_exit_status;
 }
 
-/* Free the current process's resources. It may be a bad design. */
+/* Free the current process's resources. It may be a bad design to let kernel to do so. */
 void
 process_exit (void)
 {
@@ -121,12 +134,14 @@ process_exit (void)
   while (!list_empty (&cur->opened_files)) {
       struct list_elem *e = list_pop_front (&cur->opened_files);
       struct file_info *fi = list_entry (e, struct file_info, elem);
-      lock_acquire (&fs_lock);
       file_close (fi->fptr);
-      lock_release (&fs_lock);
       free (fi);
   }
 
+  /* Close the executable */
+  if (cur->executable)
+    file_close (cur->executable);
+  
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -148,7 +163,13 @@ process_exit (void)
   if (cur->is_process) {
     printf ("%s: exit(%d)\n",thread_name(), cur->process_exit_status);
     /* Notify processes waiting for it */
+    struct list_elem *e;    
+    for (e = list_begin (&cur->being_waited.waiters); e != list_end (&cur->being_waited.waiters); e = list_next (e)) {
+      struct thread *t = list_entry (e, struct thread, elem);
+      t->wait_exit_status = cur->process_exit_status;
+    }
     sema_up (&cur->being_waited);
+    sema_up (&cur->parent->wait_child_load);
   }
 }
 
@@ -339,7 +360,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
           break;
         }
     }
-
+  thread_current() ->executable = file;
+  file_deny_write (file);
   /* Set up stack. */
   if (!setup_stack (esp))
     goto done;
@@ -393,7 +415,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
   return success;
 }
 
@@ -553,6 +574,8 @@ install_page (void *upage, void *kpage, bool writable)
 
 int 
 process_add_openfile (struct file *fptr) {
+  if (fptr == NULL)
+    return -1;
   struct file_info *fi = malloc (sizeof (struct file_info));
   fi->fptr = fptr;
   struct thread *current_process = thread_current ();
@@ -560,7 +583,7 @@ process_add_openfile (struct file *fptr) {
   if (list_empty (&current_process->opened_files))
     fi->fd = 2;
   else {
-    struct list_elem *e = list_tail (&current_process->opened_files);
+    struct list_elem *e = list_back (&current_process->opened_files);
     fi->fd = list_entry (e, struct file_info, elem)->fd+1;
   }
   list_push_back (&(current_process->opened_files), &fi->elem);

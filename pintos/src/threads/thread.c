@@ -199,11 +199,12 @@ thread_create (const char *name, int priority,
   t->sleep_end = 0;
 
 #ifdef USERPROG
-  t->process_exit_status = EXIT_NOT_EXIT;
+  t->wait_exit_status = t->process_exit_status = EXIT_NOT_EXIT;
   t->child_load_success = false;
   t->parent = thread_current ();
   t->is_already_call_wait = false;
   t->is_process = false;
+  t->executable = NULL;
   if (aux != NULL) {
     int *int_ptr = (int *)aux;
     if (*int_ptr == PROCESS_MAGIC) {

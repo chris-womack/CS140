@@ -31,18 +31,55 @@ syscall_init (void)
   lock_init (&fs_lock);
 }
 
+/*
+   Reads a byte at user virtual address UADDR.
+   UADDR must be below PHYS_BASE.
+   Returns the byte value if successful, -1 if a segfault
+   occurred.
+*/
+static int
+get_user (const uint8_t *uaddr) {
+  int result;
+  asm ("movl $1f, %0; movzbl %1, %0; 1:"
+       : "=&a"  (result)
+       : "m" (*uaddr));
+  return result;
+}
+
+/* Writes BYTE to user address UDST.
+   UDST must be below PHYS_BASE.
+   Returns true if successful, false if a segfault occurred. 
+*/
+static bool
+put_user (uint8_t *udst, uint8_t byte) {
+  int error_code;
+  asm ("movl $1f, %0; movb %b2, %1; 1:"
+       :"=&a" (error_code), "=m" (*udst)
+       : "q" (byte));
+  return error_code != -1;
+}
+
 static uint32_t
 syscall_get_argument (uint32_t *esp, int number) {
-  check_valid_ptr (esp+number);
+  /* esp += number; */
+  /* uint8_t *byte_esp = (uint8_t *)esp; //we need to move pointer one byte at each step */
+  /* uint32_t i, result = 0; */
+  /* for (i = 0; i < 4; i++) { */
+  /*   int temp = get_user (byte_esp+i); */
+  /*   if (temp == -1) */
+  /*     _exit (-1); */
+  /*   else */
+  /*     result += temp << (8*i); */
+  /* } */
+  /* return result; */
+  check_valid_ptr (esp+number, sizeof(uint32_t));
   return *(esp+number);
 }
 
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  
   uint32_t *sp = f->esp; //suppose all arguments are 4 bytes
-
   switch (syscall_get_argument (sp, 0)) {
   case SYS_HALT:
     _halt ();
@@ -152,14 +189,14 @@ _exit (int status) {
 */
 static tid_t
 _exec (const char *cmd_line) {
-  check_valid_ptr (cmd_line);
-  check_valid_ptr (cmd_line+strlen (cmd_line));
+  check_valid_ptr (cmd_line, 1);
+  check_valid_ptr (cmd_line+1, strlen(cmd_line));
 
   tid_t new_process = process_execute (cmd_line);
   if (new_process == TID_ERROR)
     return -1;
 
-  /* waiting for child to load */  
+  /* Wait child to finish load(). */
   sema_down (&thread_current()->wait_child_load);
   if (thread_current()->child_load_success)
     return new_process;
@@ -174,8 +211,9 @@ _wait (tid_t p) {
 
 static bool 
 _create (const char *file, unsigned initial_size) {
-  check_valid_ptr (file);
-  check_valid_ptr (file + strlen (file));
+  check_valid_ptr (file, 1); //ensure argument passing to strlen is valid
+  check_valid_ptr (file+1, strlen (file));
+
   lock_acquire (&fs_lock);
   bool success = filesys_create (file, initial_size);
   lock_release (&fs_lock);
@@ -184,8 +222,9 @@ _create (const char *file, unsigned initial_size) {
 
 static bool
 _remove (const char *file) {
-  check_valid_ptr (file);
-  check_valid_ptr (file + strlen (file));
+  check_valid_ptr (file, 1); //ensure argument passing to strlen is valid
+  check_valid_ptr (file+1, strlen (file));
+
   lock_acquire (&fs_lock);
   bool success = filesys_remove (file);
   lock_release (&fs_lock);
@@ -194,12 +233,14 @@ _remove (const char *file) {
 
 static int 
 _open (const char *file) {
-  check_valid_ptr (file);
-  check_valid_ptr (file + strlen (file));
+  check_valid_ptr (file, 1); //ensure argument passing to strlen is valid
+  check_valid_ptr (file+1, strlen (file));
+
   lock_acquire (&fs_lock);
   struct file *op_fptr = filesys_open (file);
-  int fd = process_add_openfile (op_fptr);
   lock_release (&fs_lock);
+  int fd = process_add_openfile (op_fptr);
+
   return fd;
 }
 
@@ -224,8 +265,7 @@ _filesize (int fd) {
 
 static int 
 _read (int fd, void *buffer, unsigned length) {
-  check_valid_ptr (buffer);
-  check_valid_ptr (buffer+length);
+  check_valid_ptr (buffer, length);
   
   if (fd == STDIN_FILENO) {
     //stdin
@@ -253,8 +293,7 @@ _read (int fd, void *buffer, unsigned length) {
 
 static int 
 _write (int fd, const void *buffer, unsigned length) {
-  check_valid_ptr (buffer);
-  check_valid_ptr (buffer + length);
+  check_valid_ptr (buffer, length);
   if (fd == STDOUT_FILENO) { 
     //write to console
     putbuf (buffer, length);
@@ -337,10 +376,14 @@ _close (int fd) {
 }
 
 void 
-check_valid_ptr (void *ptr) {
-  if (!is_user_vaddr (ptr)
-      || ptr == NULL) {
-    //printf ("Bad Access Memory %p\n",ptr);
-    _exit (-1);
-  }
+check_valid_ptr (char *ptr, size_t size) {
+  size_t i;
+  for (i = 0; i < size; i++, ptr++) {
+    if (!is_user_vaddr (ptr))
+      _exit (-1);
+    else if (ptr == NULL)
+      _exit (-1);
+    else if (get_user (ptr) == -1)
+      _exit (-1);
+    }
 }
