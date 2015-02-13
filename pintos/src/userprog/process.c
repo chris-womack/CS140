@@ -75,17 +75,16 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   lock_acquire (&fs_lock);
   success = load (file_name, &if_.eip, &if_.esp);
-
+  lock_release (&fs_lock);
   /* If load failed, quit. */
   palloc_free_page (file_name-sizeof(int));
   if (!success) { 
     thread_current ()->process_exit_status = -1;
-    thread_exit ();
+    thread_exit ();//the thread_exit will notifiy the waiting processes
   } else {
     /* Notifiy the parent */
     t->parent->child_load_success = success;
     sema_up (&t->parent->wait_child_load);
-    lock_release (&fs_lock);
   }
 
   /* Start the user process by simulating a return from an
@@ -111,17 +110,33 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
+  struct thread *cur = thread_current ();
   struct thread *child = thread_get_by_id (child_tid);
-  if ( !child
+  if (!child && child_tid < 64 && child_tid >= 0)  {
+    int retval = cur->child_exit_status[child_tid];
+    cur->child_exit_status[child_tid] = -1;
+    return retval;
+  }
+    
+  if (!child 
       || !child->is_process 
       || child->parent != thread_current ()
       || child->is_already_call_wait)
     return -1;
-
+  if (child_tid < 64 && child_tid >= 0)
+    cur->child_exit_status[child_tid] = -1;
   child->is_already_call_wait = true;
-  if (child->process_exit_status == EXIT_NOT_EXIT) //still running
+  if (child && child->process_exit_status == EXIT_NOT_EXIT
+      || cur->wait_exit_status == EXIT_NOT_EXIT) //still running
     sema_down (&child->being_waited);//wait for it
-  return thread_current ()->wait_exit_status;
+  int retval = cur->wait_exit_status;
+  cur->wait_exit_status = EXIT_NOT_EXIT;
+  return retval;
+}
+
+static int
+begin_debug (void) {
+  printf ("Begin Debug\n");
 }
 
 /* Free the current process's resources. It may be a bad design to let kernel to do so. */
@@ -132,16 +147,21 @@ process_exit (void)
 
   /* close all files opened by process */
   while (!list_empty (&cur->opened_files)) {
-      struct list_elem *e = list_pop_front (&cur->opened_files);
-      struct file_info *fi = list_entry (e, struct file_info, elem);
-      file_close (fi->fptr);
-      free (fi);
+    struct list_elem *e = list_pop_front (&cur->opened_files);
+    struct file_info *fi = list_entry (e, struct file_info, elem);
+    //lock_acquire (&fs_lock);
+    file_close (fi->fptr);
+    //lock_release (&fs_lock);
+    free (fi);
   }
 
   /* Close the executable */
-  if (cur->executable)
+  if (cur->executable) {
+    //lock_acquire (&fs_lock);
+    file_allow_write (cur->executable);
     file_close (cur->executable);
-  
+    //lock_release (&fs_lock);
+  }
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -161,13 +181,24 @@ process_exit (void)
       pagedir_destroy (pd);
     }
   if (cur->is_process) {
+    if (!cur->is_already_call_wait && cur->tid < 64)
+      cur->parent->child_exit_status[cur->tid] = cur->process_exit_status;
+    else if (cur->tid < 64)
+      cur->parent->child_exit_status[cur->tid] = -1;
     printf ("%s: exit(%d)\n",thread_name(), cur->process_exit_status);
+
+    /* If current process owns lock, release it */
+    if (fs_lock.holder == cur)
+      lock_release (&fs_lock);
+
     /* Notify processes waiting for it */
-    struct list_elem *e;    
+    struct list_elem *e;
     for (e = list_begin (&cur->being_waited.waiters); e != list_end (&cur->being_waited.waiters); e = list_next (e)) {
       struct thread *t = list_entry (e, struct thread, elem);
       t->wait_exit_status = cur->process_exit_status;
     }
+    if (list_empty (&cur->being_waited.waiters))
+      cur->parent->wait_exit_status = cur->process_exit_status+1;
     sema_up (&cur->being_waited);
     sema_up (&cur->parent->wait_child_load);
   }
@@ -586,6 +617,7 @@ process_add_openfile (struct file *fptr) {
     struct list_elem *e = list_back (&current_process->opened_files);
     fi->fd = list_entry (e, struct file_info, elem)->fd+1;
   }
+  fi->offset = 0;
   list_push_back (&(current_process->opened_files), &fi->elem);
   return fi->fd;
 }

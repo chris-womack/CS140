@@ -204,6 +204,17 @@ _exec (const char *cmd_line) {
     return -1;
 }
 
+/*
+  Waits for a child process pid and retrieves the child’s exit status.
+  If pid is still alive, waits until it terminates. 
+  Then, returns the status that pid passed to exit.If pid did not call exit(), 
+  but was terminated by the kernel (e.g. killed due to an exception), 
+  wait(pid) must return -1.
+  It is perfectly legal for a parent process to wait for child processes 
+  that have already terminated by the time the parent calls wait, 
+  but the kernel must still allow the parent to retrieve its child’s exit status, 
+  or learn that the child was terminated by the kernel.
+*/
 static int
 _wait (tid_t p) {
   return process_wait (p);

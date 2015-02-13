@@ -39,6 +39,7 @@ typedef int tid_t;
 struct file_info {
   struct file* fptr; /* Pointer for file struct created by filesys */
   int fd;            /* File Desription */
+  uint32_t offset;  /* Current process's offset on this file */
   struct list_elem elem; /* List elem */
 };
 
@@ -130,6 +131,7 @@ struct thread
   struct semaphore being_waited; /* Semaphore for being waited by parent */
   struct file *executable;       /* Pointer to current process's executable */
   int wait_exit_status;      /* Status return from exited waiting process. */
+  int child_exit_status[64]; 
 #endif
 
   /* Owned by thread.c. */

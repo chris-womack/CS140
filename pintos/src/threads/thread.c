@@ -211,7 +211,7 @@ thread_create (const char *name, int priority,
       t->is_process = true;
       aux = (void*)(int_ptr+1);
     }
-  }  
+  }
 #endif
   /* Prepare thread for first run by initializing its stack.
      Do this atomically so intermediate values for the 'stack'
@@ -574,6 +574,7 @@ init_thread (struct thread *t, const char *name, int priority)
   sema_init (&t->wait_child_load, 0);
   sema_init (&t->being_waited, 0);
   list_init (&t->opened_files);
+  memset (t->child_exit_status, -1, 64);
 #endif
   list_init (&t->waiting_locks);
   list_init (&t->owning_locks);
