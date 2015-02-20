@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <hash.h>
 #include "threads/synch.h"
 
 #ifndef EXIT_NOT_EXIT
@@ -134,6 +135,12 @@ struct thread
   int child_exit_status[64]; 
 #endif
 
+#ifdef VM /* Owened by process.c and vm/* */
+  struct list mmap_file;
+  struct hash page_table;
+  int mapid;
+#endif
+
   /* Owned by thread.c. */
   unsigned magic;                     /* Detects stack overflow. */
 
@@ -195,4 +202,5 @@ void thread_recalc_load_avg(void);
 
 /* Return NULL if TID not found in all_list */
 struct thread *thread_get_by_id (tid_t tid);
+
 #endif /* threads/thread.h */

@@ -622,4 +622,17 @@ process_add_openfile (struct file *fptr) {
   return fi->fd;
 }
 
-
+#ifdef VM
+bool
+process_mmap_file (struct page *uvpage) {
+  struct mmap_file *mfptr = (struct mmap_file*)malloc (sizeof (struct mmap_file));
+  struct thread *cur = thread_current ();
+  if (mfptr) {
+    mfptr->map_page = uvpage;
+    mfptr->id = cur->mapid;
+    list_push_back (&cur->mmap_file, &mfptr->elem);
+    return true;
+  }
+  return false;
+}
+#endif

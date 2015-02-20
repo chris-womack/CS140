@@ -576,6 +576,10 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->opened_files);
   memset (t->child_exit_status, -1, 64);
 #endif
+#ifdef VM
+  list_init (&t->mapp_file);
+  page_table_init (&t->page_table);
+#endif
   list_init (&t->waiting_locks);
   list_init (&t->owning_locks);
   list_push_back (&all_list, &t->allelem);

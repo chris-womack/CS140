@@ -2,25 +2,24 @@
 #define VM_FRAME_H
 
 #include "threads/thread.h"
-
-struct pte_elem {
-  uint32_t pte; /* Page table entry pont to the current page. */
-  struct list_elem elem; /* Elem of pte_list. */
-};
+#include "vm/page.h"
 
 /*
   Each entry in the frame table contains a pointer to the page, if any,
   that currently occupies it. The Diagram of our frame structure is as follow:
 */
 struct frame {
-  void *frame_ptr;
-  struct thread *thread_belonged;
-  struct pte_elem *pte_elem;
+  void *kpage; /* Kernel page */
+  struct thread *used_process; /* Current process that uses it */
+  struct page *uvpage; /* Current user virtual page that occupies it */
   struct list_elem elem; /* Elem of frame table. */
 };
 
+/* Init the frame table. */
 void frame_alloc_init (void);
-void *frame_alloc_get_page (enum palloc_flags flags, struct pte_elem *elem);
+/* Get a frame to map the address of UVPAGE. */
+void *frame_alloc_get_page (enum palloc_flags flags, struct page *uvpage);
+/* Free the frame and the map of user virtual page will be invaild. */
 void frame_free_page (void *page);
 
 #endif
