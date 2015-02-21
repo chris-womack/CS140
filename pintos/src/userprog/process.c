@@ -201,6 +201,11 @@ process_exit (void)
       cur->parent->wait_exit_status = cur->process_exit_status+1;
     sema_up (&cur->being_waited);
     sema_up (&cur->parent->wait_child_load);
+    
+#ifdef VM
+    process_munmap_file (-1);
+    page_table_destory (&cur->page_table);
+#endif
   }
 }
 
@@ -525,6 +530,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
+  size_t file_start = ofs;
 
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
@@ -534,7 +540,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
          and zero the final PAGE_ZERO_BYTES bytes. */
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
-
+#ifndef VM
       /* Get a page of memory. */
       uint8_t *kpage = palloc_get_page (PAL_USER);
       if (kpage == NULL)
@@ -554,7 +560,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
           palloc_free_page (kpage);
           return false; 
         }
-
+#else 
+      /* Lazy load */
+      struct page uvpage;
+      uvpage.uvaddr = upage;
+      uvpage.fptr = file;
+      uvpage.frs = page_read_bytes;
+      uvpage.fs = file_start;
+      uvpage.fzs = page_zero_bytes;
+      uvpage.flags = writable ? UPG_WRITABLE : 0;
+      file_start += page_read_bytes;
+#endif
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
@@ -570,7 +586,7 @@ setup_stack (void **esp)
 {
   uint8_t *kpage;
   bool success = false;
-
+#ifndef VM
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
@@ -580,6 +596,11 @@ setup_stack (void **esp)
       else
         palloc_free_page (kpage);
     }
+#else
+  success = page_user_stack ((uint8_t *) PHYS_BASE) - PGSIZE);
+ if (success)
+   *esp = PHYS_BASE;
+#endif
   return success;
 }
 
@@ -635,4 +656,56 @@ process_mmap_file (struct page *uvpage) {
   }
   return false;
 }
+
+void
+process_munmap_file (mapid_t mapid) {
+  struct thread *cur = thread_current ();  
+  size_t map_size = list_size (&cur->mmap_file);
+  int close = 0, i;
+  struct file *f = NULL;
+  
+  for (i = 0; i < map_size; i++) {
+    struct list_elem *e = list_pop_front (&cur->mmap_file);
+    struct mmap_file *mfptr = list_entry (e, struct mmap_file, elem);
+    if (mfptr->id == mapid || mapid == -1) { //if current map page should be delete
+      mfptr->map_page->flags &= ~UPG_EVICTABLE; //mark it as Unevictable
+      if (!(mfptr->map_page->flags & UPG_INVALID)) { //if this page has data
+        if (pagedir_is_dirty (cur->pagedir, mfptr->map_page->uvaddr)) { //and it is dirty
+          /* Write back to file */
+          lock_acquire (&fs_lock);
+          file_write_at (mfptr->map_page->fptr, mfptr->map_page->uvaddr,
+                         mfptr->map_page->frs, mfptr->map_page->fs);
+          lock_release (&fs_lock);
+        }
+        /* Clear the uvpage and free the kpage */
+        frame_free_page (pagedir_get_page (cur->pagedir, mfptr->map_page->uvaddr));
+        pagedir_clear_page (cur->pagedir, mfptr->map_page->uvaddr);
+      }
+      //if this page has data end
+      /* Remove from page table */
+      hash_delete (&cur->page_table, &mfptr->map_page->elem);
+      /* Awesome way */
+      if (close != mfptr->id) {
+        if (f) {
+          lock_acquire (&fs_lock);
+          file_close (f);
+          lock_release (&fs_lock);
+        }
+        close = mfptr->id;
+        f = mfptr->map_page->fptr;
+      }
+      free (mfptr->map_page);
+      free (mfptr);
+
+    } else /* If this page should not be deleted, push back to map file list */
+      list_push_back (&cur->mmap_file, e);
+  }
+  /* Awesome way */
+  if (f) {
+    lock_acquire (&fs_lock);
+    file_close (f);
+    lock_release (&fs_lock);
+  }
+}
+
 #endif

@@ -103,9 +103,34 @@ page_table_insert (struct hash *table, struct page *uvpage) {
       | uvpage->flags & UPG_ON_MMAP
       | uvpage->flags & UPG_ON_SWAP 
       | UPG_INVALID
-      | UPG_WRITABLE;
+      | uvpage->flags & UPG_WRITABLE;
     if (process_mmap_file (p))
       return hash_insert (&thread_current ()->page_table, &p->elem);
+  }
+  return false;
+}
+
+bool
+page_user_stack (void *uvaddr) {
+  if ((size_t)(PHYS_BASE-uvaddr) > STACK_OVER_FLOW)
+    return false;
+
+  struct page *p = (struct page*)malloc (sizeof (struct page));
+  void *kpage = NULL;
+  struct thread *cur = thread_current ();
+  if (p) {
+    p->uvaddr = pg_round_down (uvaddr);
+    p->flags = intr_context () ? UPG_EVICTABLE : 0 | UPG_ON_SWAP | UPG_WRITABLE;
+    kpage = frame_alloc_get_page (PAL_USER, p);
+    if (kpage) {
+      if (install_page (uvaddr, kpage, true))
+        return (hash_insert (&cur->page_table, &p->elem) == NULL);
+      else {
+        frame_free_page (kpage);
+        free (p);
+      }
+    } else
+      free (p);
   }
   return false;
 }

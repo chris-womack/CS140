@@ -31,5 +31,8 @@ bool page_table_insert (struct hash *table, struct page *uvpage);
 struct page *page_get_page (void *uvaddr);
 bool page_map_page (struct page *uvpage);
 
+#define STACK_OVER_FLOW 8 * 1024 * 1024 //8 MB Stack size
+
+bool page_user_stack (void *uvaddr);
 
 #endif

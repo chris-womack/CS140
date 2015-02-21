@@ -10,7 +10,5 @@ void syscall_init (void);
  */
 void check_valid_ptr (char *ptr, size_t size);
 
-//void _exit (int status);
-
 struct lock fs_lock;
 #endif /* userprog/syscall.h */

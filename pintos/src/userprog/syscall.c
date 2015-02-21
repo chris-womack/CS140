@@ -23,8 +23,9 @@ static int _write (int fd, const void *buffer, unsigned length);
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
+static mmapid_t _mmap (int fd, void *addr);
+static void _munmap (mmapid_t mapid);
 
-void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
@@ -46,32 +47,8 @@ get_user (const uint8_t *uaddr) {
   return result;
 }
 
-/* Writes BYTE to user address UDST.
-   UDST must be below PHYS_BASE.
-   Returns true if successful, false if a segfault occurred. 
-*/
-static bool
-put_user (uint8_t *udst, uint8_t byte) {
-  int error_code;
-  asm ("movl $1f, %0; movb %b2, %1; 1:"
-       :"=&a" (error_code), "=m" (*udst)
-       : "q" (byte));
-  return error_code != -1;
-}
-
 static uint32_t
 syscall_get_argument (uint32_t *esp, int number) {
-  /* esp += number; */
-  /* uint8_t *byte_esp = (uint8_t *)esp; //we need to move pointer one byte at each step */
-  /* uint32_t i, result = 0; */
-  /* for (i = 0; i < 4; i++) { */
-  /*   int temp = get_user (byte_esp+i); */
-  /*   if (temp == -1) */
-  /*     _exit (-1); */
-  /*   else */
-  /*     result += temp << (8*i); */
-  /* } */
-  /* return result; */
   check_valid_ptr (esp+number, sizeof(uint32_t));
   return *(esp+number);
 }
@@ -138,15 +115,19 @@ syscall_handler (struct intr_frame *f)
   case SYS_CLOSE:
     _close (syscall_get_argument (sp, 1));
     break;
-
+#ifdef VM
   case SYS_MMAP:
-    //TODO rest in after project 2
+    _mmap (syscall_get_argument (sp, 1), 
+           syscall_get_argument (sp, 2));
     break;
 
   case SYS_MUNMAP:
+    _munmap (syscall_get_argument (sp, 1),
+             syscall_get_argument (sp, 2));
     break;
-
+#endif
   case SYS_CHDIR:
+    //Others for project4
     break;
     
   case SYS_MKDIR:
@@ -385,16 +366,57 @@ _close (int fd) {
     }
   }
 }
+#ifdef VM
+static mmapid_t 
+_mmap (int fd, void *addr) {
+  check_valid_ptr (addr, PGSIZE);
+  struct list_elem *e;
+  struct thread *cur = thread_current ();
+  struct page p;
+  size_t file_start = 0, read_bytes = 0, page_read_bytes = 0, page_zero_bytes = 0;
+  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files)) {
+    struct file_info *fi = list_entry (e, struct file_info, elem);
+    if (fi->fd == fd) {
+      lock_acquire (&fs_lock);
+      struct file *f = file_reopen (fi->fptr);
+      read_bytes = file_length (fi->fptr);
+      lock_release (&fs_lock);
+      cur->mapid++;
+      while (read_bytes > 0) {
+        page_read_bytes = read_bytes > PGSIZE ? PGSIZE : read_bytes;
+        page_zero_bytes = PGSIZE - page_read_bytes;
+        p.uvaddr = addr, p.frs = page_read_bytes;
+        p.fs = file_start, p.fzs = page_zero_bytes;
+        p.flags = UPG_ON_MMAP | UPG_WRITABLE, p.fptr = f;
+        if (page_table_insert (&cur->page_table, p)) {
+          /* Advance */
+          read_bytes -= page_read_bytes;
+          file_start += page_read_bytes;
+          addr += page_read_bytes;
+          return cur->mapid;
+        } else
+          _munmap (cur->mapid);
+      }
+      break;
+    }
+  }
+  return -1;
+}
+
+static void 
+_munmap (mmapid_t mapid) {
+  process_munmap_file (mapid);
+}
+
+#endif
 
 void 
 check_valid_ptr (char *ptr, size_t size) {
   size_t i;
-  for (i = 0; i < size; i++, ptr++) {
-    if (!is_user_vaddr (ptr))
+  for (i = 0; i < size; i++, ptr++)
+    if (!is_user_vaddr (ptr) 
+        || ptr == NULL 
+        || get_user (ptr) == -1)
       _exit (-1);
-    else if (ptr == NULL)
-      _exit (-1);
-    else if (get_user (ptr) == -1)
-      _exit (-1);
-    }
+
 }

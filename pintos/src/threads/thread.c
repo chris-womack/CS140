@@ -104,6 +104,9 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   load_avg = integer_to_fixedpoint(0);
+#ifdef VM
+  frame_alloc_init ();
+#endif
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();//get stack pointer and use it to determine current thread location
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -579,6 +582,7 @@ init_thread (struct thread *t, const char *name, int priority)
 #ifdef VM
   list_init (&t->mapp_file);
   page_table_init (&t->page_table);
+  t->mapid = 0;
 #endif
   list_init (&t->waiting_locks);
   list_init (&t->owning_locks);

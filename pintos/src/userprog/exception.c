@@ -2,9 +2,12 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include "userprog/gdt.h"
-//#include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+
+#ifdef VM
+#include "vm/page.h"
+#endif
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -111,6 +114,11 @@ kill (struct intr_frame *f)
     }
 }
 
+/* Page fault handler helper */
+static bool is_stack_access (struct intr_frame *f, void *fault_addr) {
+  return fault_addr >= f->esp- sizeof (int) * 8;
+}
+
 /* Page fault handler.  This is a skeleton that must be filled in
    to implement virtual memory.  Some solutions to project 2 may
    also require modifying this code.
@@ -161,7 +169,19 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-
+#ifdef VM
+  bool success = false;
+  if (is_user_vaddr (fault_addr)) {
+    struct page *p = page_get_page (fault_addr);
+    if (p) {
+      success = page_map_page (p);
+      p->flags &= UPG_EVICTABLE;
+    } else if ( is_stack_access (f, fault_addr) )
+      success = page_user_stack (fault_addr);      
+  }
+  if (success)
+    return;
+#endif
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
