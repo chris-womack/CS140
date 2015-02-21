@@ -1,12 +1,13 @@
 #include "vm/frame.h"
 #include "vm/swap.h"
 #include "userprog/syscall.h"
-
+#include "userprog/pagedir.h"
+#include "filesys/file.h"
+#include "threads/malloc.h"
 static struct lock frame_table_lock;
 static struct list frame_table;
 
-void *frame_alloc_evict (enum palloc_flags);
-void frame_init (struct frame *f, struct pte_elem *elem);
+void *frame_alloc_evict (enum palloc_flags flags);
 
 void 
 frame_alloc_init (void) {
@@ -33,6 +34,7 @@ frame_alloc_get_page (enum palloc_flags flags, struct page *uvpage) {
   lock_acquire (&frame_table_lock);
   list_push_back (&frame_table, &f->elem);
   lock_release (&frame_table_lock);
+  return f->kpage;
 }
 
 void 
@@ -42,7 +44,7 @@ frame_free_page (void *kpage) {
   lock_acquire (&frame_table_lock);
   for (e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e)) {
     struct frame *f = list_entry (e, struct frame, elem);
-    if (f->frame_ptr == kpage) {
+    if (f->kpage == kpage) {
       list_remove (e); //remove elem from the table
       palloc_free_page (kpage); //free the page to user pool
       free (f); //free the block memory
@@ -77,13 +79,13 @@ frame_alloc_evict (enum palloc_flags flags) {
           lock_release (&fs_lock);
         } else { /* Swap to swap space */
           f->uvpage->flags &= UPG_ON_SWAP;
-          if (f->uvpage->swap_id = swap_write_page (f->kpage) == SWAP_ID_ERROR)
+          if ((f->uvpage->swap_id = swap_write_page (f->kpage)) == SWAP_ID_ERROR)
             return NULL;
         }
 
       /* If current page is from Swap Space, write back */
       else if (f->uvpage->flags & UPG_ON_SWAP)
-        if (f->uvpage->swap_id = swap_write_page (f->kpage) == SWAP_ID_ERROR)
+        if ((f->uvpage->swap_id = swap_write_page (f->kpage)) == SWAP_ID_ERROR)
           return NULL;
       
       /* Free the frame and remove it from frame table.
@@ -97,7 +99,9 @@ frame_alloc_evict (enum palloc_flags flags) {
       break;
     }
   check_next:
-    e = list_next (e) == list_end (&frame_table) ? list_begin (&frame_table), list_next (e);
+    e = list_next (e) == list_end (&frame_table)
+      ? list_begin (&frame_table)
+      : list_next (e);
   }
   
   lock_release (&frame_table_lock);

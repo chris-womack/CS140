@@ -7,6 +7,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "filesys/filesys.h"
+#include "userprog/process.h"
 
 static void syscall_handler (struct intr_frame *);
 /* Functions prototype for system calls framework */
@@ -23,8 +24,10 @@ static int _write (int fd, const void *buffer, unsigned length);
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
+#ifdef VM
 static mmapid_t _mmap (int fd, void *addr);
 static void _munmap (mmapid_t mapid);
+#endif
 
 syscall_init (void) 
 {
@@ -122,8 +125,7 @@ syscall_handler (struct intr_frame *f)
     break;
 
   case SYS_MUNMAP:
-    _munmap (syscall_get_argument (sp, 1),
-             syscall_get_argument (sp, 2));
+    _munmap (syscall_get_argument (sp, 1));
     break;
 #endif
   case SYS_CHDIR:
@@ -374,7 +376,8 @@ _mmap (int fd, void *addr) {
   struct thread *cur = thread_current ();
   struct page p;
   size_t file_start = 0, read_bytes = 0, page_read_bytes = 0, page_zero_bytes = 0;
-  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files)) {
+  for (e = list_begin (&cur->opened_files); e != list_end (&cur->opened_files);
+       e = list_next (e)) {
     struct file_info *fi = list_entry (e, struct file_info, elem);
     if (fi->fd == fd) {
       lock_acquire (&fs_lock);
@@ -388,7 +391,7 @@ _mmap (int fd, void *addr) {
         p.uvaddr = addr, p.frs = page_read_bytes;
         p.fs = file_start, p.fzs = page_zero_bytes;
         p.flags = UPG_ON_MMAP | UPG_WRITABLE, p.fptr = f;
-        if (page_table_insert (&cur->page_table, p)) {
+        if (page_table_insert (&cur->page_table, &p)) {
           /* Advance */
           read_bytes -= page_read_bytes;
           file_start += page_read_bytes;

@@ -4,6 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 
 #ifdef VM
 #include "vm/page.h"
@@ -171,7 +172,7 @@ page_fault (struct intr_frame *f)
      which fault_addr refers. */
 #ifdef VM
   bool success = false;
-  if (is_user_vaddr (fault_addr)) {
+  if (not_present && is_user_vaddr (fault_addr)) {
     struct page *p = page_get_page (fault_addr);
     if (p) {
       success = page_map_page (p);

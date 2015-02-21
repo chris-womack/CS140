@@ -1,6 +1,6 @@
 #ifndef VM_SWAP_H
 #define VM_SWAP_H
-#include <bitmap>
+#include <bitmap.h>
 
 typedef uint32_t swap_id_t;
 #define SWAP_ID_ERROR BITMAP_ERROR

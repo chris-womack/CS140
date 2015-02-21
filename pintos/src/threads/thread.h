@@ -10,6 +10,9 @@
 #ifndef EXIT_NOT_EXIT
 #define EXIT_NOT_EXIT 128
 #endif
+
+#define MAX_CHILD_SIZE 64
+
 /* States in a thread's life cycle. */
 
 enum thread_status
@@ -132,10 +135,11 @@ struct thread
   struct semaphore being_waited; /* Semaphore for being waited by parent */
   struct file *executable;       /* Pointer to current process's executable */
   int wait_exit_status;      /* Status return from exited waiting process. */
-  int child_exit_status[64]; 
+  //int *child_exit_status;   
+  int child_exit_status[MAX_CHILD_SIZE];
 #endif
 
-#ifdef VM /* Owened by process.c and vm/* */
+#ifdef VM /* Owened by process.c and vm */
   struct list mmap_file;
   struct hash page_table;
   int mapid;

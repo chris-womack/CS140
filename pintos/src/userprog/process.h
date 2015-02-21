@@ -12,6 +12,7 @@ void process_exit (void);
 void process_activate (void);
 /* Add a file to the list of files process opens */
 int process_add_openfile (struct file *fptr);
+bool install_page (void *upage, void *kpage, bool writable);
 
 #ifdef VM
 typedef int mmapid_t;

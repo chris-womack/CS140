@@ -15,7 +15,10 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
-
+#ifdef VM
+#include "vm/frame.h"
+#include "vm/page.h"
+#endif
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -577,11 +580,11 @@ init_thread (struct thread *t, const char *name, int priority)
   sema_init (&t->wait_child_load, 0);
   sema_init (&t->being_waited, 0);
   list_init (&t->opened_files);
-  memset (t->child_exit_status, -1, 64);
+  memset (t->child_exit_status, -1, MAX_CHILD_SIZE);
 #endif
 #ifdef VM
-  list_init (&t->mapp_file);
-  page_table_init (&t->page_table);
+  list_init (&t->mmap_file);
+  //page_table_init (&t->page_table);
   t->mapid = 0;
 #endif
   list_init (&t->waiting_locks);

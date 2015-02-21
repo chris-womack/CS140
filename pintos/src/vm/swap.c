@@ -1,11 +1,13 @@
 #include "vm/swap.h"
 #include "threads/synch.h"
+#include "threads/vaddr.h"
+#include "devices/block.h"
 
 #include <bitmap.h>
 
-static block *swap_space;
+static struct block *swap_space;
 static struct lock swap_lock;
-static bitmap *used_slot_map; /* Our slot size is PGSIZE */
+static struct bitmap *used_slot_map; /* Our slot size is PGSIZE */
 static const bool SWAP_USED = true;
 static const size_t sectors_in_page = PGSIZE / BLOCK_SECTOR_SIZE; //# of sectors in a page
 

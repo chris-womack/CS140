@@ -68,6 +68,9 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
   struct thread *t = thread_current();
+#ifdef VM
+  page_table_init (&t->page_table);
+#endif
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -462,7 +465,6 @@ push (void **esp, void *data, size_t length) {
   memcpy (*esp, data, length);
 }
 
-static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -569,6 +571,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       uvpage.fs = file_start;
       uvpage.fzs = page_zero_bytes;
       uvpage.flags = writable ? UPG_WRITABLE : 0;
+      page_table_insert (&thread_current ()->page_table, &uvpage);
       file_start += page_read_bytes;
 #endif
       /* Advance. */
@@ -597,7 +600,7 @@ setup_stack (void **esp)
         palloc_free_page (kpage);
     }
 #else
-  success = page_user_stack ((uint8_t *) PHYS_BASE) - PGSIZE);
+  success = page_user_stack (((uint8_t *) PHYS_BASE) - PGSIZE);
  if (success)
    *esp = PHYS_BASE;
 #endif
@@ -613,7 +616,7 @@ setup_stack (void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
@@ -630,16 +633,16 @@ process_add_openfile (struct file *fptr) {
     return -1;
   struct file_info *fi = malloc (sizeof (struct file_info));
   fi->fptr = fptr;
-  struct thread *current_process = thread_current ();
-  //fi->fd = 2 + list_size (&current_process->opened_files);
-  if (list_empty (&current_process->opened_files))
+  struct thread *cur = thread_current ();
+  //fi->fd = 2 + list_size (&cur->opened_files);
+  if (list_empty (&cur->opened_files))
     fi->fd = 2;
   else {
-    struct list_elem *e = list_back (&current_process->opened_files);
+    struct list_elem *e = list_back (&cur->opened_files);
     fi->fd = list_entry (e, struct file_info, elem)->fd+1;
   }
   fi->offset = 0;
-  list_push_back (&(current_process->opened_files), &fi->elem);
+  list_push_back (&(cur->opened_files), &fi->elem);
   return fi->fd;
 }
 
@@ -658,7 +661,7 @@ process_mmap_file (struct page *uvpage) {
 }
 
 void
-process_munmap_file (mapid_t mapid) {
+process_munmap_file (mmapid_t mapid) {
   struct thread *cur = thread_current ();  
   size_t map_size = list_size (&cur->mmap_file);
   int close = 0, i;

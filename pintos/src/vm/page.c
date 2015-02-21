@@ -2,9 +2,16 @@
 #include "vm/frame.h"
 #include "vm/swap.h"
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
+#include "userprog/syscall.h"
+#include "threads/malloc.h"
+#include "threads/vaddr.h"
+#include "filesys/file.h"
+
+#include <string.h>
 
 static unsigned 
-page_hash (const struct hash_elem *e, const void *aux UNUSED) {
+page_hash (const struct hash_elem *e, void *aux UNUSED) {
   struct page *uvpage = hash_entry (e, struct page, elem);
   return hash_int ((int)uvpage->uvaddr);
 }
@@ -16,7 +23,7 @@ page_compare (const struct hash_elem *a, const struct hash_elem *b, void*aux UNU
   return ap->uvaddr < bp->uvaddr;
 }
 
-static bool
+static void
 page_free (struct hash_elem *e, void *aux UNUSED) {
   struct page *uvpage = hash_entry (e, struct page, elem);
   struct thread *cur = thread_current ();
@@ -87,11 +94,13 @@ page_map_file (struct page *uvpage) {
       lock_release (&fs_lock);
       if (read_bytes == uvpage->frs) {
         memset (kpage+read_bytes, 0, uvpage->fzs);
-        if (install_page (uvpage->uvaddr, kpage, uvpage->flags & UPG_WRITABLE))
+        if (install_page (uvpage->uvaddr, kpage, uvpage->flags & UPG_WRITABLE)) {
           uvpage->flags &= ~UPG_INVALID;
+          return true;
+        }
       }
     }
-  return uvpage->flags & ~UPG_INVALID;
+  return false;
 }
 
 bool
@@ -100,10 +109,10 @@ page_table_insert (struct hash *table, struct page *uvpage) {
   if (p) {
     *p = *uvpage;
     p->flags = UPG_EVICTABLE 
-      | uvpage->flags & UPG_ON_MMAP
-      | uvpage->flags & UPG_ON_SWAP 
+      | (uvpage->flags & UPG_ON_MMAP)
+      | (uvpage->flags & UPG_ON_SWAP)
       | UPG_INVALID
-      | uvpage->flags & UPG_WRITABLE;
+      | (uvpage->flags & UPG_WRITABLE);
     if (process_mmap_file (p))
       return hash_insert (&thread_current ()->page_table, &p->elem);
   }
