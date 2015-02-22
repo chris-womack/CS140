@@ -87,19 +87,26 @@ page_map_file (struct page *uvpage) {
   void *kpage = NULL;
   size_t read_bytes = 0;
   kpage = frame_alloc_get_page (uvpage->frs == 0 ? PAL_USER|PAL_ZERO : PAL_USER, uvpage);
-  if (kpage)
+  if (kpage) {
     if (uvpage->frs > 0) {
       lock_acquire (&fs_lock);
       read_bytes = file_read_at (uvpage->fptr, kpage, uvpage->frs, uvpage->fs);
       lock_release (&fs_lock);
       if (read_bytes == uvpage->frs) {
         memset (kpage+read_bytes, 0, uvpage->fzs);
-        if (install_page (uvpage->uvaddr, kpage, uvpage->flags & UPG_WRITABLE)) {
-          uvpage->flags &= ~UPG_INVALID;
-          return true;
-        }
+      } else {
+        frame_free_page (kpage);
+        return false;
       }
     }
+    if (install_page (uvpage->uvaddr, kpage, uvpage->flags & UPG_WRITABLE)) {
+      uvpage->flags &= ~UPG_INVALID;
+      return true;
+    } else {
+      frame_free_page (kpage);
+      return false;
+    }
+  }
   return false;
 }
 

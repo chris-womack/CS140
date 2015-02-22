@@ -158,6 +158,14 @@ process_exit (void)
     free (fi);
   }
 
+#ifdef VM
+  if (cur->is_process) {
+      process_munmap_file (-1);
+      page_table_destory (&cur->page_table);
+  } 
+#endif
+
+
   /* Close the executable */
   if (cur->executable) {
     //lock_acquire (&fs_lock);
@@ -205,10 +213,6 @@ process_exit (void)
     sema_up (&cur->being_waited);
     sema_up (&cur->parent->wait_child_load);
     
-#ifdef VM
-    process_munmap_file (-1);
-    page_table_destory (&cur->page_table);
-#endif
   }
 }
 
