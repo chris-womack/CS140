@@ -139,7 +139,7 @@ page_user_stack (void *uvaddr) {
     p->flags = intr_context () ? UPG_EVICTABLE : 0 | UPG_ON_SWAP | UPG_WRITABLE;
     kpage = frame_alloc_get_page (PAL_USER, p);
     if (kpage) {
-      if (install_page (uvaddr, kpage, true))
+      if (install_page (p->uvaddr, kpage, true))
         return (hash_insert (&cur->page_table, &p->elem) == NULL);
       else {
         frame_free_page (kpage);

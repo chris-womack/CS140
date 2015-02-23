@@ -368,6 +368,7 @@ _close (int fd) {
     }
   }
 }
+
 #ifdef VM
 static mmapid_t 
 _mmap (int fd, void *addr) {

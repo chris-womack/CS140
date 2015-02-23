@@ -679,10 +679,10 @@ process_munmap_file (mmapid_t mapid) {
       if (!(mfptr->map_page->flags & UPG_INVALID)) { //if this page has data
         if (pagedir_is_dirty (cur->pagedir, mfptr->map_page->uvaddr)) { //and it is dirty
           /* Write back to file */
-          lock_acquire (&fs_lock);
+          //lock_acquire (&fs_lock);
           file_write_at (mfptr->map_page->fptr, mfptr->map_page->uvaddr,
                          mfptr->map_page->frs, mfptr->map_page->fs);
-          lock_release (&fs_lock);
+          //lock_release (&fs_lock);
         }
         /* Clear the uvpage and free the kpage */
         frame_free_page (pagedir_get_page (cur->pagedir, mfptr->map_page->uvaddr));
@@ -709,9 +709,9 @@ process_munmap_file (mmapid_t mapid) {
   }
   /* Awesome way */
   if (f) {
-    lock_acquire (&fs_lock);
+    //lock_acquire (&fs_lock);
     file_close (f);
-    lock_release (&fs_lock);
+    //lock_release (&fs_lock);
   }
 }
 
