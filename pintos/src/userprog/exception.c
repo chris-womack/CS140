@@ -117,7 +117,7 @@ kill (struct intr_frame *f)
 
 /* Page fault handler helper */
 static bool is_stack_access (struct intr_frame *f, void *fault_addr) {
-  return fault_addr >= f->esp- sizeof (int) * 8;
+  return fault_addr >= f->esp - 32;
 }
 
 /* Page fault handler.  This is a skeleton that must be filled in
@@ -168,8 +168,8 @@ page_fault (struct intr_frame *f)
     if (p) {
       success = page_map_page (p);
       p->flags &= UPG_EVICTABLE;
-    } else if ( is_stack_access (f, fault_addr) )
-      success = page_user_stack (fault_addr);      
+    } else if (is_stack_access (f, fault_addr))
+      success = page_user_stack (fault_addr);
   }
   if (success)
     return;

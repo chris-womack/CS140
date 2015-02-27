@@ -566,8 +566,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
           palloc_free_page (kpage);
           return false; 
         }
-#else 
-      /* Lazy load */
+#else       /* Lazy load */
+
+      /* Setup page */
       struct page uvpage;
       uvpage.uvaddr = upage;
       uvpage.fptr = file;
@@ -575,7 +576,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       uvpage.fs = file_start;
       uvpage.fzs = page_zero_bytes;
       uvpage.flags = writable ? UPG_WRITABLE : 0;
+      /* Insert into page table */
       page_table_insert (&thread_current ()->page_table, &uvpage);
+
+      /* Adcance */
       file_start += page_read_bytes;
 #endif
       /* Advance. */

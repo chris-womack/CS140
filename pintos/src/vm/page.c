@@ -136,7 +136,7 @@ page_user_stack (void *uvaddr) {
   struct thread *cur = thread_current ();
   if (p) {
     p->uvaddr = pg_round_down (uvaddr);
-    p->flags = intr_context () ? UPG_EVICTABLE : 0 | UPG_ON_SWAP | UPG_WRITABLE;
+    p->flags = (intr_context () ? UPG_EVICTABLE : 0) | UPG_ON_SWAP | UPG_WRITABLE;
     kpage = frame_alloc_get_page (PAL_USER, p);
     if (kpage) {
       if (install_page (p->uvaddr, kpage, true))
